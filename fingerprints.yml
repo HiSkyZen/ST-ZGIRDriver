@@ -1,0 +1,6 @@
+zigbeeManufacturer:
+  - id: "HOBEIAN/ZG-IR01"
+    deviceLabel: "HOBEIAN ZG-IR01"
+    manufacturer: "HOBEIAN"
+    model: "ZG-IR01"
+    deviceProfileName: "zg-ir01-probe"

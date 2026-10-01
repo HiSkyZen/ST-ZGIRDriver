@@ -1,0 +1,49 @@
+# Build artifacts
+build/
+out/
+Debug/
+Release/
+*/Debug/
+*/Release/
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.o
+*.a
+*.d
+
+# STM32CubeIDE / Eclipse
+.settings/
+.metadata/
+.project
+.cproject
+*.launch
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+compile_commands.json
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Internal Documents
+docs/
+docs/**

@@ -1,0 +1,8 @@
+name: "HOBEIAN ZG-IR01 Probe"
+packageKey: "hobeian-zg-ir01-probe"
+defaultProfile: "zg-ir01-probe"
+
+permissions:
+  zigbee: {}
+
+description: "Firmware and Zigbee probe for HOBEIAN ZG-IR01"
