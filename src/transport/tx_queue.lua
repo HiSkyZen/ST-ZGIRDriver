@@ -14,6 +14,7 @@ local zosung = require "transport.zosung"
 local M = {}
 
 M.WATCHDOG_SEC = 15
+M.STALL_SEC = 5        -- no chunk request at all by then: the device dropped the start
 M.MAX_ATTEMPTS = 2       -- first try + one retry after watchdog timeout
 M.INTER_FRAME_SEC = 0.25 -- settle time between consecutive transfers
 M.MAX_QUEUE = 40
@@ -45,19 +46,24 @@ local function start(device, st, item)
   local gen = st.gen
   log.info(string.format("[ZGIR] TXQ send %s attempt=%d queued=%d", item.label or "?", item.attempt, #st.items))
   zosung.begin_transmit(device, zosung.build_ir_json(item.code, item.freq))
-  device.thread:call_with_delay(M.WATCHDOG_SEC, function()
+  local function expire(reason)
     if st.inflight ~= item or st.gen ~= gen then return end
+    st.gen = st.gen + 1
     zosung.abort_transmit(device)
     st.inflight = nil
     if item.attempt < M.MAX_ATTEMPTS then
-      log.warn("[ZGIR] TXQ watchdog: retrying " .. (item.label or "?"))
+      log.warn("[ZGIR] TXQ " .. reason .. ": retrying " .. (item.label or "?"))
       table.insert(st.items, 1, item)
     else
-      log.warn("[ZGIR] TXQ watchdog: giving up " .. (item.label or "?"))
+      log.warn("[ZGIR] TXQ " .. reason .. ": giving up " .. (item.label or "?"))
       finish(item, false, "timeout")
     end
     pump(device)
+  end
+  device.thread:call_with_delay(M.STALL_SEC, function()
+    if zosung.tx_progress(device) == 0 then expire("stall") end
   end)
+  device.thread:call_with_delay(M.WATCHDOG_SEC, function() expire("watchdog") end)
 end
 
 pump = function(device)

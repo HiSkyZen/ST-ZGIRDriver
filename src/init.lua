@@ -71,7 +71,7 @@ end
 capability_handlers[caps.LEARNING_ID] = {
   startGuided = child_only(function(_, d) learning.start_guided(d) end),
   learn = child_only(function(_, d, cmd) learning.learn_key(d, cmd.args.key) end),
-  confirm = child_only(function(_, d) learning.confirm(d) end),
+  confirm = child_only(function(_, d) learning.confirm(d); remote_io.pack_info(d) end),
   retry = child_only(function(_, d) learning.retry(d) end),
   skip = child_only(function(_, d) learning.skip(d) end),
   cancel = child_only(function(_, d) learning.cancel(d) end),

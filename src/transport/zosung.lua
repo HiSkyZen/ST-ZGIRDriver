@@ -153,6 +153,7 @@ local function rx_02(driver, device, zb_rx)
   if tx == nil then return log.warn("[ZGIR] chunk request without active transmit seq=" .. seq) end
   if position >= #tx.msg then return log.warn("[ZGIR] chunk request beyond payload pos=" .. position) end
   tx.last_activity = os.time()
+  tx.chunks = (tx.chunks or 0) + 1
   local part = tx.msg:sub(position + 1, position + math.max(1, maxlen))
   send(device, 0x03, M.frame_03(seq, position, part))
 end
@@ -235,6 +236,12 @@ end
 
 function M.abort_transmit(device)
   device:set_field(F_TX, nil)
+end
+
+-- number of chunk requests served for the in-flight transfer (nil if none)
+function M.tx_progress(device)
+  local tx = device:get_field(F_TX)
+  return tx and (tx.chunks or 0) or nil
 end
 
 function M.tx_active(device)
