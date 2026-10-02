@@ -19,10 +19,18 @@ local M = {}
 M.CHECKPOINT_SEC = 30
 M.STALE_SEC = 1800 -- commanded state older than this is low-confidence
 
-local F_STATE = "state"
+local F_STATE = "state"        -- persisted snapshot (never mutated in place)
+local F_RAM = "state_ram"      -- working copy
 
 function M.get(device, defaults)
-  local st = device:get_field(F_STATE)
+  local st = device:get_field(F_RAM)
+  if st == nil then
+    local saved = device:get_field(F_STATE)
+    if saved ~= nil then
+      st = util.deep_copy(saved)
+      device:set_field(F_RAM, st)
+    end
+  end
   if st == nil then
     st = {
       desired = util.deep_copy(defaults or {}),
@@ -31,7 +39,7 @@ function M.get(device, defaults)
       confidence = "low",
       updated = 0,
     }
-    device:set_field(F_STATE, st)
+    device:set_field(F_RAM, st)
   end
   if defaults then
     for k, v in pairs(defaults) do
@@ -51,11 +59,11 @@ local function schedule_checkpoint(device, st)
 end
 
 function M.flush(device)
-  local st = device:get_field(F_STATE)
+  local st = device:get_field(F_RAM)
   if st == nil then return end
   st.dirty_gen = nil
   local copy = util.deep_copy(st)
-  device:set_field(F_STATE, st, { persist = true })
+  device:set_field(F_STATE, copy, { persist = true })
   log.debug("[ZGIR] state checkpoint " .. (device.label or device.id) .. " " .. util.json_canonical(copy.desired))
 end
 

@@ -4,6 +4,7 @@ local log = require "log"
 local caps = require "caps"
 local store = require "ir.store"
 local dispatcher = require "children.dispatcher"
+local util = require "util"
 
 local M = {}
 
@@ -50,7 +51,7 @@ function M.create(driver, parent, spec_text)
   local seq = (parent:get_field(F_SEQ) or 0) + 1
   parent:set_field(F_SEQ, seq, { persist = true })
   local key = def.device_type .. "-" .. seq
-  local pending = parent:get_field(F_PENDING) or {}
+  local pending = util.deep_copy(parent:get_field(F_PENDING) or {})
   pending[key] = def
   parent:set_field(F_PENDING, pending, { persist = true })
   local label = spec.label or (def.meta and def.meta.name) or M.DEFAULT_LABELS[def.device_type]
@@ -72,7 +73,7 @@ function M.on_child_added(driver, child)
   local key = child.parent_assigned_child_key or ""
   local def = store.get(child)
   if def == nil and parent then
-    local pending = parent:get_field(F_PENDING) or {}
+    local pending = util.deep_copy(parent:get_field(F_PENDING) or {})
     def = pending[key]
     if def then
       pending[key] = nil

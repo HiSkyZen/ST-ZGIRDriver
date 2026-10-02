@@ -12,7 +12,7 @@ if not ok_learner then ac_learner = nil end
 local M = { TYPE = "ac", PROFILE = "ir-ac", LABEL = "IR Air Conditioner" }
 
 M.TOGGLES = { "turbo", "eco", "sleep", "display" }
-M.COALESCE_DELAY = 0.6
+M.COALESCE_DELAY = 1.0
 
 M.DEFAULT_CONSTRAINTS = {
   min_temp = 16, max_temp = 30, step = 1,
@@ -110,14 +110,15 @@ function M.apply(ctx, patch)
   local s = st.desired
   local code, method_or_err, carrier = M.resolve(ctx.def, s)
   if not code then
-    ctx.prompt("이 상태의 IR 코드가 아직 없습니다: " .. M.state_key(s) .. " (에어컨 학습에서 추가하세요)", "missing")
+    ctx.prompt("이 상태의 IR 코드가 아직 없습니다: " .. M.state_key(M.normalize(ctx.def, s)) .. " (에어컨 학습에서 추가하세요)", "missing")
     log.warn("[ZGIR] AC " .. method_or_err)
     M.emit_all(ctx)
     return false
   end
-  log.info(string.format("[ZGIR] AC state %s via %s", M.state_key(s), method_or_err))
+  local key = M.state_key(M.normalize(ctx.def, s))
+  log.info(string.format("[ZGIR] AC state %s via %s", key, method_or_err))
   ctx.send_code(code, carrier, {
-    label = "ac:" .. M.state_key(s), coalesce = "ac:" .. ctx.device.id, delay = M.COALESCE_DELAY,
+    label = "ac:" .. key, coalesce = "ac:" .. ctx.device.id, delay = M.COALESCE_DELAY,
   })
   M.emit_all(ctx)
   return true

@@ -1,6 +1,7 @@
 -- Remote definition persistence on the child device (field "def").
 -- Definitions change rarely (learn/import/model) and are committed at once.
 local log = require "log"
+local util = require "util"
 
 local M = {}
 
@@ -17,13 +18,18 @@ function M.new_def(device_type, meta)
   }
 end
 
+-- Persisted field values must not be mutated in place (nested assignment
+-- into a value read back from the persistent store was observed on the hub
+-- to lose data).  Callers get a private copy and commit with M.save.
 function M.get(device)
-  return device:get_field(F_DEF)
+  local v = device:get_field(F_DEF)
+  if v == nil then return nil end
+  return util.deep_copy(v)
 end
 
 -- Immediate commit (persist=true).  `reason` is logged for traceability.
 function M.save(device, def, reason)
-  device:set_field(F_DEF, def, { persist = true })
+  device:set_field(F_DEF, util.deep_copy(def), { persist = true })
   local n = 0
   for _ in pairs(def.commands or {}) do n = n + 1 end
   log.info(string.format("[ZGIR] def saved %s (%s) commands=%d", device.label or device.id, reason or "?", n))

@@ -202,7 +202,9 @@ local function on_ac_code(child, session, code, sig)
   local def = store.get(child)
   local s = session.request.state
   local ac_mod = require "devices.ac"
-  def.ac.codebook[ac_mod.state_key(s)] = { z = code, carrier = sig.carrier_hz }
+  def.ac = def.ac or {}
+  def.ac.codebook = def.ac.codebook or {}
+  def.ac.codebook[ac_mod.state_key(ac_mod.normalize(def, s))] = { z = code, carrier = sig.carrier_hz }
   local report
   if session.learner then
     local ok, err = session.learner:add_sample(s, sig)

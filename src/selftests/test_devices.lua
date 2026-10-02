@@ -33,6 +33,19 @@ return {
       local code, err = ac.resolve(def, { power = "on", mode = "heat", fan = "auto", swing = "off", temp = 30 })
       t.eq(code, nil); t.ok(err)
     end },
+    { "smartir climate keeps constraints through from_import_result", function(t)
+      local frame = "[3000,3000,500,1500,500,500,500,500]"
+      local text = '{"manufacturer":"TestCo","commandsEncoding":"Raw","minTemperature":24,"maxTemperature":26,' ..
+        '"precision":1,"operationModes":["cool"],"fanModes":["auto","low"],"commands":{"off":' .. frame ..
+        ',"cool":{"auto":{"24":' .. frame .. '},"low":{"24":' .. frame .. '}}}}'
+      local result = assert(require("import.detect").parse_any(text))
+      t.eq(result.smartir.constraints.min_temp, 24, "parser min_temp")
+      t.eq(#result.smartir.constraints.fan_modes, 2, "parser fan modes")
+      local def = assert(require("packs.import").from_import_result(result, "ac", result.meta))
+      t.eq(def.ac.constraints.min_temp, 24, "def min_temp")
+      t.eq(#def.ac.constraints.fan_modes, 2, "def fan modes")
+      t.ok(def.ac.codebook["cool|low|-|24"], "codebook key")
+    end },
     { "key helpers", function(t)
       t.same(common.sorted_keys({ ok = 1, power = 1, zz_custom = 1, vol_up = 1 }), { "power", "vol_up", "ok", "zz_custom" })
       t.eq(common.sanitize_key("Vol Up!"), "vol_up")

@@ -155,4 +155,4 @@ Debounced (RAM then 30 s checkpoint): logical state (temp, fan, volume, input...
 
 Single in-flight transfer per bridge, **seq fixed 0**, 15 s watchdog, 1 retry on timeout.
 Stateless keys queue FIFO; stateful (AC) requests carry `coalesce` key and replace queued
-entries with the same key (debounce ≈ 600 ms before dispatch).
+entries with the same key (debounce ≈ 1 s before dispatch).

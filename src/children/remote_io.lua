@@ -47,6 +47,10 @@ local function pack_info(child)
     (def.ac and def.ac.model) and " model=parametric" or "",
     def.active == false and " (미확인)" or "")
   child:emit_event(caps.pack.packInfo({ value = text:sub(1, 500) }))
+  if def.ac then
+    log.info("[ZGIR] AC constraints " .. util.json_canonical(def.ac.constraints or {}) ..
+      " fan_n=" .. tostring(def.ac.constraints and def.ac.constraints.fan_modes and #def.ac.constraints.fan_modes))
+  end
 end
 M.pack_info = pack_info
 
