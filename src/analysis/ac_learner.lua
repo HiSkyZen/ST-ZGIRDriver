@@ -1,7 +1,7 @@
 -- Differential AC learner. Learners have methods; all persisted data is plain.
 local util = require "util"
 local signal = require "ir.signal"
-local zosung = require "ir.codec_zosung"
+local native = require "ir.native"
 local timings = require "analysis.timings"
 local symbols = require "analysis.symbols"
 local diff = require "analysis.diff"
@@ -545,7 +545,7 @@ end
 
 local function decode_record(rec)
   if type(rec) ~= "table" or type(rec.z) ~= "string" then return nil end
-  return protect(zosung.decode, rec.z, rec.carrier)
+  return protect(native.decode, rec.z, rec.carrier)
 end
 
 local function learner_raw(exported, state)

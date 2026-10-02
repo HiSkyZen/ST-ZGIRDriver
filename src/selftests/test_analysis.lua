@@ -1,6 +1,6 @@
 local util = require "util"
 local signal = require "ir.signal"
-local zosung = require "ir.codec_zosung"
+local native = require "ir.native"
 local timings = require "analysis.timings"
 local symbols = require "analysis.symbols"
 local checksum = require "analysis.checksum"
@@ -145,7 +145,7 @@ return { name = "analysis", cases = {
   { "parametric hybrid raw and missing resolution", function(t)
     local learner, model, unseen = learn(t, "byte")
     local off = { power = "off" }
-    local offz = assert(zosung.encode(capture(off, "byte")))
+    local offz = assert(native.encode(capture(off, "byte")))
     local def = { constraints = C, model = model, learner = learner:export(), codebook = { off = { z = offz, carrier = 38000 } } }
     local sig, tier = ac.resolve(def, unseen); t.ok(sig); t.eq(tier, "parametric")
     local partial = util.deep_copy(model); partial.fields.mode = nil; partial.training_verified = false
@@ -157,7 +157,7 @@ return { name = "analysis", cases = {
     sig, tier = ac.resolve({ constraints = C, codebook = def.codebook }, off); t.ok(sig); t.eq(tier, "raw")
     sig, tier = ac.resolve({ constraints = C, codebook = {} }, unseen); t.eq(sig, nil); t.eq(tier, "no code for state")
     -- Corrupt analysis cannot hide an exact raw code.
-    local key, z = ac.state_key(hybrid_state), assert(zosung.encode(capture(hybrid_state, "byte")))
+    local key, z = ac.state_key(hybrid_state), assert(native.encode(capture(hybrid_state, "byte")))
     sig, tier = ac.resolve({ constraints = C, model = { schema = 1, checksum_verified = true, toggles = {} }, codebook = { [key] = { z = z, carrier = 38000 } } }, hybrid_state)
     t.ok(sig); t.eq(tier, "raw")
     sig, tier = ac.resolve({ model = { constraints = { step = 0 } }, codebook = { [key] = { z = z, carrier = 38000 } } }, hybrid_state)
@@ -184,7 +184,7 @@ return { name = "analysis", cases = {
       local p = { encoding = "pulse_distance", header = { 9000, 4500 }, footer = { 500 }, zero = { 500, 500 }, one = { 500, 1500 }, bit_count = 32 }
       local a = assert(symbols.encode_bits(p, bits)); a[#a + 1] = 65535
       local key = ac.state_key(state(temp)); random[key] = signal.new(38000, a)
-      compact[key] = { z = assert(zosung.encode(random[key])), carrier = 38000 }
+      compact[key] = { z = assert(native.encode(random[key])), carrier = 38000 }
     end
     local raw = assert(ac.from_codebook(C, random)); local m, r = raw:analyze()
     t.ok(not m or not m.training_verified); t.eq(r.status, "raw-only")
