@@ -187,8 +187,11 @@ function M.export(driver, child)
   for i = 1, n do
     log.info(string.format("[ZGIR][EXPORT] %s %d/%d %s", id, i, n, text:sub((i - 1) * M.LOG_CHUNK + 1, i * M.LOG_CHUNK)))
   end
-  if #text <= M.EXPORT_ATTR_MAX then
-    child:emit_event(caps.pack.exportData({ value = text }, { visibility = { displayed = false } }))
+  -- exportData carries the single-line share string (link / QR payload);
+  -- tools/export.ps1 turns it back into a .stir JSON file.
+  local share = "STIR1:" .. util.b64_encode(text)
+  if #share <= M.EXPORT_ATTR_MAX then
+    child:emit_event(caps.pack.exportData({ value = share }, { visibility = { displayed = false } }))
   else
     child:emit_event(caps.pack.exportData({ value = string.format("%s: %d bytes — logcat [ZGIR][EXPORT] 참조", id, #text) }))
   end
