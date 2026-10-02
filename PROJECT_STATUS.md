@@ -8,6 +8,8 @@ Last updated: 2026-10-02. The driver runs on the user's hub (V3, fw 000.062.0000
 | Area | Evidence |
 | --- | --- |
 | Learn → store → replay round trip (spec §17 regression) | LG remote power learned through the TV child flow, stored, replayed via `press("lg_power")`; the user confirmed the TV toggled |
+| Regression after transport rework | LG "volume +" learned → stored → replayed; the TV reacted (user confirmed) |
+| One press = one step | A held capture contained 5 NEC repeat codes (one replay = +5). `ir/normalize` strips them on learn/paste; normalized learned vol+ = +1 and generated vol− = −1 (user confirmed) |
 | Generated IR (no learning) | `sendCode("builtin:lg-tv:power")`, built by the NEC encoder → canonical → native packet; the user confirmed the TV toggled |
 | Native format | ZG-IR01 learns **Broadlink packets** (len counts the header, no terminator); device-learned codes re-encode byte-identically (self-test) |
 | Zosung transport | E004 study 0/1, ED00 0x00–0x05, seq fixed 0, chunk retry, checksum, malformed-frame guards, Default Response |
