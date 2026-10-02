@@ -55,13 +55,14 @@ function M.constraints(def)
   }
 end
 
--- State used for code lookup: dimensions the remote lacks become "-".
+-- State used for code lookup: dimensions the remote lacks are nil (the
+-- state key prints them as "-"), matching analysis/ac_learner.
 function M.normalize(def, s)
   local c = M.constraints(def)
   local n = {}
   for k, v in pairs(s) do n[k] = v end
-  if #c.fan_modes == 0 then n.fan = "-" end
-  if #c.swing_modes == 0 then n.swing = "-" end
+  if #c.fan_modes == 0 then n.fan = nil end
+  if #c.swing_modes == 0 then n.swing = nil end
   return n
 end
 

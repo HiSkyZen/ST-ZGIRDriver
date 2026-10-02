@@ -24,6 +24,15 @@ local bridge = require "bridge"
 
 local driver -- set after construction; used by transport callbacks
 
+-- Long AC analyses yield to the cosock scheduler so Zigbee/IR/UI keep running.
+do
+  local ok, ac_learner = pcall(require, "analysis.ac_learner")
+  if ok and type(ac_learner) == "table" and ac_learner.set_yield then
+    local socket = require "cosock.socket"
+    ac_learner.set_yield(function() socket.sleep(0) end)
+  end
+end
+
 --------------------------------------------------------------------------
 -- transport sinks
 

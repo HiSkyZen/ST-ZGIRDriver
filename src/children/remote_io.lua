@@ -160,7 +160,6 @@ function M.import(driver, child, raw_text)
   else
     merge_def(child, def, incoming)
   end
-  if def.device_type == "ac" and not (def.ac and def.ac.model) then analyze_codebook(def) end
   def.active = false
   store.save(child, def, "import " .. tostring(info or (def.meta and def.meta.pack_id) or "pack"))
   local n, cb = 0, 0
@@ -171,6 +170,21 @@ function M.import(driver, child, raw_text)
   dispatcher.refresh_ui(child)
   pack_info(child)
   learning.begin_import_verify(child)
+  if def.device_type == "ac" and not (def.ac and def.ac.model) then
+    -- promotion to a parametric model is slow on the hub: run it after the
+    -- import result and the verification transmit have been handed off
+    child.thread:call_with_delay(1, function()
+      local d = store.get(child)
+      if not (d and d.ac) then return end
+      local t0 = os.time()
+      analyze_codebook(d)
+      if d.ac.model then
+        store.save(child, d, "ac model from import")
+        pack_info(child)
+      end
+      log.info(string.format("[ZGIR] imported codebook analysis took %ds", os.time() - t0))
+    end)
+  end
 end
 
 function M.export(driver, child)

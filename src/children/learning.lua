@@ -205,22 +205,33 @@ local function on_ac_code(child, session, code, sig)
   def.ac = def.ac or {}
   def.ac.codebook = def.ac.codebook or {}
   def.ac.codebook[ac_mod.state_key(ac_mod.normalize(def, s))] = { z = code, carrier = sig.carrier_hz }
-  local report
-  if session.learner then
-    local ok, err = session.learner:add_sample(s, sig)
-    if not ok then log.warn("[ZGIR] add_sample rejected: " .. tostring(err)) end
-    local aok, model, rep = pcall(session.learner.analyze, session.learner)
-    if aok and model then def.ac.model = model end
-    report = aok and rep or model
-    local eok, exported = pcall(session.learner.export, session.learner)
-    if eok then def.ac.learner = exported end
-  end
+  -- the raw sample is committed first so nothing is lost if analysis is slow
   store.save(child, def, "ac sample " .. ac_mod.state_key(s))
-  if report then log.info("[ZGIR] AC analysis: " .. require("util").json_canonical(report):sub(1, 400)) end
   session.phase = "verify"
   dispatcher.send_code(child, code, sig.carrier_hz, { label = "ac-test" })
   prompt(child, "[" .. describe_state(s) .. "] 저장 후 시험 송신했습니다. 반응했으면 '확인', 아니면 '재시도'.",
     "verify", ac_mod.state_key(s))
+  if session.learner then
+    local ok, err = session.learner:add_sample(s, sig)
+    if not ok then log.warn("[ZGIR] add_sample rejected: " .. tostring(err)) end
+    session.analyzing = true
+    -- analysis runs after the prompt/test transmit have been handed off
+    child.thread:call_with_delay(0.5, function()
+      local t0 = os.time()
+      local aok, model, rep = pcall(session.learner.analyze, session.learner)
+      local d = store.get(child)
+      if d and d.ac then
+        if aok and model then d.ac.model = model end
+        local eok, exported = pcall(session.learner.export, session.learner)
+        if eok then d.ac.learner = exported end
+        store.save(child, d, "ac analysis")
+      end
+      session.analyzing = false
+      local report = aok and (rep or (model and { model = "ok" })) or { error = tostring(model) }
+      log.info(string.format("[ZGIR] AC analysis %ds: %s", os.time() - t0,
+        require("util").json_canonical(report or {}):sub(1, 400)))
+    end)
+  end
 end
 
 --------------------------------------------------------------------------
@@ -275,7 +286,12 @@ function M.confirm(child)
     return prompt(child, "리모컨이 활성화되었습니다.", "done")
   end
   if session.phase ~= "verify" then return prompt(child, "신호를 받은 뒤 '확인'을 눌러 주세요.", "waiting") end
-  if session.mode == "ac" then return ac_next(child, session) end
+  if session.mode == "ac" then
+    if session.analyzing then
+      return prompt(child, "분석 중입니다. 잠시 후 '확인'을 다시 눌러 주세요.", "analyzing")
+    end
+    return ac_next(child, session)
+  end
   session.idx = session.idx + 1
   begin_key(child, session)
 end
