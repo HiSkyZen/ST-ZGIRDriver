@@ -20,6 +20,7 @@ M.CHUNK_SIZE = 0x38
 M.LEARN_TIMEOUT_SEC = 30
 M.CHUNK_RETRY_SEC = 5 -- the device can take >3 s to answer the first request
 M.CHUNK_RETRIES = 5
+M.FIRST_CHUNK_WAIT_SEC = 10
 -- Firmware 23062026 requests chunks with seq=0 regardless of the announced
 -- sequence, so every outbound transfer uses seq 0 and transfers are serialized.
 M.TX_SEQ = 0
@@ -107,7 +108,9 @@ local function request_chunk(device, rx)
   rx.req_id = (rx.req_id or 0) + 1
   local req = rx.req_id
   send(device, 0x02, M.frame_02(rx.seq, #rx.buffer, M.CHUNK_SIZE))
-  device.thread:call_with_delay(M.CHUNK_RETRY_SEC, function()
+  -- observed on hardware: the first chunk can take several seconds, later ones are fast
+  local wait = (#rx.buffer == 0 and (rx.retries or 0) == 0) and M.FIRST_CHUNK_WAIT_SEC or M.CHUNK_RETRY_SEC
+  device.thread:call_with_delay(wait, function()
     local cur = device:get_field(F_RX)
     if cur ~= rx or rx.req_id ~= req or rx.done then return end
     rx.retries = (rx.retries or 0) + 1

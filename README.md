@@ -1,114 +1,87 @@
-# HOBEIAN ZG-IR01 Arbitrary IR Probe
+# ZG-IR01 Universal IR (SmartThings Edge)
 
-This is a temporary SmartThings Edge driver whose only job is to prove that a
-HOBEIAN `ZG-IR01` can use its `0xE004` / `0xED00` Zosung path for arbitrary IR,
-instead of being limited to the 12 EF00 on-device slots.
+A fully local, universal IR platform for the HOBEIAN **ZG-IR01** Zigbee IR blaster.
 
-## Probe controls
+The physical ZG-IR01 acts only as a bridge. Each TV, air conditioner, fan, AV/media
+device or free-form remote becomes its own SmartThings `EDGE_CHILD` device, with
+standard capabilities wherever SmartThings has them.
 
-The driver intentionally uses only stock SmartThings capabilities:
+- Learn and transmit arbitrary IR. The 12 on-device slots are not used.
+- Child types: TV, air conditioner, fan, media (AV/soundbar/projector/set-top), generic remote.
+- Guided learning (prompt → receive → save → automatic test send → confirm/retry/skip), single-key re-learning, duplicate detection.
+- Air conditioners keep one logical state and send full-state frames. A differential
+  analyzer turns labelled samples into a parametric model, with hybrid and raw-codebook fallback.
+- Importers: Broadlink (base64/hex), Pronto Hex, LIRC raw, Global Caché `sendir`, SmartIR JSON,
+  Tuya/Zosung base64, raw timing lists, and `name: code` lines (auto-detected).
+- Remote Packs (`.stir`, versioned, checksummed): export, import, and a single-line `STIR1:` share string.
+- Built-in remotes generated from protocol encoders: `builtin:lg-tv`, `builtin:samsung-tv`, `builtin:sony-tv`.
+- Built-in temperature, humidity, battery % and battery voltage, with configurable Zigbee reporting.
+- Everything runs on the hub. No internet or cloud service is involved in learning or sending.
 
-- **Refresh**: enter IR learning mode.
-- **Switch ON**: send the most recently learned IR code back to the blaster.
-- **Switch OFF**: cancel IR learning.
+Architecture and module contracts are in [ARCHITECTURE.md](ARCHITECTURE.md). Verification status is in
+[PROJECT_STATUS.md](PROJECT_STATUS.md).
 
-The learned code is kept in a persistent driver field and is also printed in
-Live Logging as `LEARNED_CODE=<base64>`.
-
-## Deploy
-
-From this directory:
-
-```powershell
-smartthings edge:drivers:package .
-smartthings edge:channels:assign
-smartthings edge:drivers:install
-```
-
-Switch the already-paired ZG-IR01 to this driver:
+## Install
 
 ```powershell
-smartthings edge:drivers:switch ccf1f35c-413d-40b4-8942-b759b33af330
+./tools/deploy.ps1                      # package -> assign to channel -> install on hub
+smartthings edge:drivers:switch <ZG-IR01 deviceId> --driver <driverId>
 ```
 
-Then run Live Logging with the packaged driver ID:
+No re-pairing is needed.
+
+## Using it
+
+The bridge device (`ZG-IR01`) shows the sensors and an **IR Bridge** panel:
+
+| Action | App field / CLI |
+| --- | --- |
+| Add a remote | `createRemote("tv")`, `"ac:거실 에어컨"`, `"fan"`, `"media"`, `"generic:My remote"`, `"builtin:lg-tv"` |
+| Learn a raw code (shown in status/log) | `learnRaw()` |
+| Send any code once | `sendCode("<Broadlink/Pronto/raw/... or builtin:lg-tv:power>")` |
+| On-hub self-test | `selfTest("")` (results in status and `edge:drivers:logcat`) |
+
+Each appliance child has:
+
+- **Standard controls** for its type (switch, volume, channel, input, playback, AC mode/setpoint/fan/swing, fan speed…)
+- **IR Remote**: every learned key in a list, plus a "send key by name" field (`press("vol_up")`).
+- **IR Learning**: `startGuided()`, `learn("key_name")`, `confirm()`, `retry()`, `skip()`, `cancel()`.
+  The prompt line tells you what to press.
+- **IR Remote Pack**: `importData("<anything importable>")` and `exportPack()`. The share string appears in *Exported pack*.
+
+Imported remotes start **unverified**. The driver test-sends power (or a representative
+code); press `confirm()` once the appliance reacted.
+
+Air conditioners: `startGuided()` runs the differential learning. Set the physical remote to the
+state named in the prompt and press any button. The analyzer picks whichever state reduces
+uncertainty most. Imported SmartIR climate files are used as a raw codebook immediately and are
+promoted to a parametric model when the protocol is regular. The four extra switches (Turbo, Eco,
+Sleep, Display) are standard `switch` components.
+
+### Files
 
 ```powershell
-smartthings edge:drivers:logcat <DRIVER_ID>
+./tools/import.ps1 -Device <childId> -File smartir_1180.json   # large files are sent in parts
+./tools/export.ps1 -Device <childId> -Out living-tv.stir
 ```
 
-No re-pairing should be necessary.
+### Sensor reporting preferences (bridge device settings)
 
-## Test
+`periodicReporting`, `reportingInterval` (1 min … 6 h), `tempChange`, `humidityChange`,
+`batteryReporting`, `batteryInterval`. They are applied with Zigbee *Configure Reporting*. Frequent
+reporting increases battery drain. With reporting off, the driver stops requesting periodic
+reports, but reports the device sends on its own are still recorded.
 
-### 1. Learn
+## Development
 
-In the SmartThings app press **Refresh**, or:
+There is no local Lua toolchain. Pure modules are verified on the real hub:
 
 ```powershell
-smartthings devices:commands ccf1f35c-413d-40b4-8942-b759b33af330 'main:refresh:refresh()'
+./tools/deploy.ps1
+smartthings edge:drivers:logcat <driverId> --hub-address <hub ip>
+smartthings devices:commands <bridgeId> 'main:drumpepper55014.irBridge:selfTest("")'
 ```
 
-Within a few seconds point a physical IR remote at the ZG-IR01 and press a
-button.
-
-A successful learn should contain lines resembling:
-
-```text
-[ZGIR] RX 0x00 learned-transfer start ...
-[ZGIR] RX 0x03 learn chunk ...
-[ZGIR] LEARN SUCCESS raw_bytes=...
-[ZGIR] LEARNED_CODE=...
-```
-
-### 2. Replay through the hub
-
-Turn the probe **Switch ON**, or:
-
-```powershell
-smartthings devices:commands ccf1f35c-413d-40b4-8942-b759b33af330 'main:switch:on()'
-```
-
-A successful arbitrary transmit should show `0x02` chunk requests followed by:
-
-```text
-[ZGIR] ARBITRARY IR TRANSMIT COMPLETED seq=...
-```
-
-The physical appliance should react to the same IR command. If that happens,
-the important question is settled: this firmware supports arbitrary
-hub-supplied IR, so the final SmartThings driver does not need to be limited to
-the 12 hardware slots.
-
-## Header-mode fallback
-
-Current Zigbee2MQTT/ZHA Zosung definitions use ordinary cluster-specific
-commands without a manufacturer code. Therefore this probe defaults to:
-
-```lua
-local USE_MFG_SPECIFIC = false
-```
-
-If learning produces no `0xED00` traffic at all despite the physical remote
-being aimed correctly, change it to `true`, repackage, reassign the new driver
-version to your channel, reinstall, and retry. That fallback uses manufacturer
-code `0x1002`, which some TS1201-family SmartThings implementations use.
-
-## Notes
-
-The probe also keeps stock handlers for the ZG-IR01 standard temperature,
-humidity and battery clusters. It reads Basic-cluster firmware identity fields
-on init, but lack of a response to `SWBuildID (0x4000)` is not considered a
-failure.
-
-
-## ZG-IR01 TX sequence quirk
-
-Firmware `DateCode=23062026` was observed to accept the first arbitrary transmit
-with sequence 0, but when a later transfer was initiated with sequence 1 the
-device acknowledged that start and nevertheless requested chunks for sequence 0.
-
-This probe therefore keeps outbound IR-transfer `seq` fixed at `0`.  It also
-serializes replays so a second tap cannot overwrite the in-flight seq-0 payload.
-This matches the effective behavior of the current upstream Zosung converter for
-independent sends.
+Self-test modules live in `src/selftests/` (the Edge packager strips `src/tests/`).
+Custom capability definitions and presentations are in `capabilities/`. `drumpepper55014` is the
+capability namespace SmartThings assigned to the developer organization.
