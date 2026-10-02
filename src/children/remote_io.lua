@@ -175,6 +175,19 @@ function M.import(driver, child, raw_text)
     incoming.meta = incoming.meta or {}
     def = incoming
   else
+    -- pasted key codes are often held-button captures: one press = one step
+    if def.device_type ~= "ac" then
+      local normalize = require "ir.normalize"
+      for k, rec in pairs(incoming.commands or {}) do
+        local sig = native.decode(rec.z, rec.carrier)
+        local trimmed, removed = nil, 0
+        if sig then trimmed, removed = normalize.strip_repeat_codes(sig) end
+        if removed > 0 then
+          local z = native.encode(trimmed)
+          if z then incoming.commands[k] = { z = z, carrier = rec.carrier } end
+        end
+      end
+    end
     merge_def(child, def, incoming)
   end
   def.active = false

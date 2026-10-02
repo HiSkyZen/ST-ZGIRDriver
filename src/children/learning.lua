@@ -123,6 +123,15 @@ end
 
 local function on_key_code(child, session, code, sig)
   local item = session.keys[session.idx]
+  -- one press must mean one step: drop the held-button repeat codes
+  local trimmed, removed = require("ir.normalize").strip_repeat_codes(sig)
+  if removed > 0 then
+    local recoded = native.encode(trimmed)
+    if recoded then
+      log.info(string.format("[ZGIR] stripped %d repeat code(s) from learned %s", removed, item.key))
+      code, sig = recoded, trimmed
+    end
+  end
   local def = store.get(child)
   local fp = fp_of(sig)
   local dup = duplicate_of(def, fp, item.key)

@@ -66,6 +66,21 @@ return {
       local wide = ac.constraints({ ac = { constraints = { min_temp = 0, max_temp = 1e9, step = 1 } } })
       t.eq(wide.max_temp, 30, "unbounded range rejected")
     end },
+    { "held-button repeat codes are stripped from learned keys", function(t)
+      local native = require "ir.native"
+      local normalize = require "ir.normalize"
+      -- LG "volume +" held briefly, learned by ZG-IR01 on 2026-10-02: one replay raised the volume by 5
+      local held = "JgBxAAABGY0REhASEDUREhESERIREhESEDUQNRERETQRNBE1ETURNBESEDQREhESERIREhESERIRNRESETURNBE0EDUQNRE0EQAE4wABGEYRAAvLAAEZRhEAC8sAARlGEQALywABGUYRAAvLAAEZRhE="
+      local sig = assert(native.decode(held))
+      local one, removed = normalize.strip_repeat_codes(sig)
+      t.eq(removed, 5, "repeat codes removed")
+      t.eq(#one.timings_us, 67, "single NEC frame")
+      t.ok(native.encode(one), "re-encodes")
+      -- full-frame repetition (Sony SIRC x3) is kept
+      local sony = require("ir.protocols").sony_sirc(21, 1, 12)
+      local same, n = normalize.strip_repeat_codes(sony)
+      t.eq(n, 0); t.eq(same, sony)
+    end },
     { "key helpers", function(t)
       t.same(common.sorted_keys({ ok = 1, power = 1, zz_custom = 1, vol_up = 1 }), { "power", "vol_up", "ok", "zz_custom" })
       t.eq(common.sanitize_key("Vol Up!"), "vol_up")
