@@ -77,11 +77,18 @@ function M.send_key(device, key, opts)
     return false
   end
   local label = (device.label or "child") .. ":" .. key
-  M.send_code(device, rec.z, rec.carrier, {
+  local queued = M.send_code(device, rec.z, rec.carrier, {
     label = label,
-    on_success = function() state.commanded(device) end,
-    on_fail = opts.on_fail,
+    on_success = function() state.commanded(device, opts.commanded) end,
+    on_fail = function(err)
+      if opts.fields then state.invalidate(device, opts.fields) end
+      if opts.on_fail then opts.on_fail(err) end
+    end,
   })
+  if not queued then
+    M.prompt(device, "송신 대기열이 가득 찼습니다. 잠시 후 다시 시도하세요.", "busy")
+    return false
+  end
   device:emit_event(caps.remote.lastKey({ value = key }, { state_change = true }))
   return true
 end
@@ -95,11 +102,19 @@ function M.ctx(device)
   ctx.send_key = function(key, opts) return M.send_key(device, key, opts) end
   ctx.send_code = function(code, carrier, opts)
     opts = opts or {}
-    opts.on_success = opts.on_success or function() state.commanded(device) end
+    local snapshot = opts.commanded
+    opts.on_success = opts.on_success or function() state.commanded(device, snapshot) end
+    if opts.fields then
+      local prev = opts.on_fail
+      opts.on_fail = function(err)
+        state.invalidate(device, opts.fields)
+        if prev then prev(err) end
+      end
+    end
     return M.send_code(device, code, carrier, opts)
   end
   ctx.update = function(patch) return state.update(device, patch, "commanded") end
-  ctx.confident = function() return state.is_confident(device) end
+  ctx.confident = function(field) return state.is_confident(device, field) end
   ctx.emit = function(event, component)
     if component and component ~= "main" then
       local comp = device.profile.components[component]

@@ -28,7 +28,10 @@ function M.get(device)
 end
 
 -- Immediate commit (persist=true).  `reason` is logged for traceability.
+-- Every save bumps `rev`, so deferred work can detect that the definition
+-- changed underneath it (e.g. an import replaced the remote).
 function M.save(device, def, reason)
+  def.rev = (tonumber(def.rev) or 0) + 1
   device:set_field(F_DEF, util.deep_copy(def), { persist = true })
   local n = 0
   for _ in pairs(def.commands or {}) do n = n + 1 end

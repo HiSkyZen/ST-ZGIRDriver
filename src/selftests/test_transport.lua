@@ -43,6 +43,34 @@ local function code_of(json)
   return json:match('"key_code":"([^"]+)"')
 end
 
+
+-- Drive inbound ED00 handlers with the radio stubbed out.
+local zigbee = require "transport.zigbee"
+
+local function with_stub_zigbee(fn)
+  local orig_send, orig_ack = zigbee.send_cluster_command, zigbee.ack
+  local sent = {}
+  zigbee.send_cluster_command = function(_, cluster, cmd, payload) sent[#sent + 1] = { cluster = cluster, cmd = cmd } end
+  zigbee.ack = function() end
+  local orig_learned, orig_timeout = zosung.on_learned, zosung.on_learn_timeout
+  local ok, err = pcall(fn, sent)
+  zigbee.send_cluster_command, zigbee.ack = orig_send, orig_ack
+  zosung.on_learned, zosung.on_learn_timeout = orig_learned, orig_timeout
+  if not ok then error(err, 0) end
+end
+
+local function rx(cmd, body)
+  return { body = { zcl_header = {}, zcl_body = { body_bytes = body } } }
+end
+
+local function inbound(device, cmd, body)
+  zosung.cluster_handlers[zosung.CLUSTER_TRANSFER][cmd](nil, device, rx(cmd, body))
+end
+
+local function chunk(seq, pos, data)
+  return string.pack("<I1I2I4", 0, seq, pos) .. string.char(#data) .. data .. string.char(zosung.crc(data))
+end
+
 return {
   name = "transport",
   cases = {
@@ -99,6 +127,66 @@ return {
         d:run(tx_queue.WATCHDOG_SEC) -- second timeout -> give up
         t.eq(final, "timeout")
         t.eq(tx_queue.stats(d).queued, 0)
+      end)
+    end },
+    { "learn completes even if the 0x05 finish is lost", function(t)
+      with_stub_zigbee(function()
+        local d = fake_device()
+        local got
+        zosung.on_learned = function(_, code) got = code end
+        zosung.start_learning(d, 30)
+        inbound(d, 0x00, string.pack("<I2I4I4I2I1I1I2", 7, 3, 0, 0xE004, 1, 2, 0))
+        t.ok(zosung.rx_busy(d), "busy during transfer")
+        inbound(d, 0x03, chunk(7, 0, "abc"))
+        t.eq(got, nil, "not before finish wait")
+        d:run(zosung.FINISH_WAIT_SEC)
+        t.eq(got, "YWJj", "delivered after finish timeout")
+        t.ok(not zosung.rx_busy(d), "bridge released")
+      end)
+    end },
+    { "bad checksum and premature finish fail cleanly", function(t)
+      with_stub_zigbee(function()
+        local d = fake_device()
+        local outcome, got
+        zosung.on_learned = function(_, code) got = code end
+        zosung.on_learn_timeout = function(_, o) outcome = o end
+        zosung.start_learning(d, 30)
+        inbound(d, 0x00, string.pack("<I2I4I4I2I1I1I2", 1, 6, 0, 0xE004, 1, 2, 0))
+        local bad = string.pack("<I1I2I4", 0, 1, 0) .. string.char(3) .. "abc" .. string.char(0)
+        inbound(d, 0x03, bad)
+        inbound(d, 0x03, string.pack("<I1I2I4", 0, 1, 0) .. string.char(3) .. "abc") -- no checksum byte
+        inbound(d, 0x05, string.pack("<I2I2", 1, 0))
+        t.eq(got, nil, "partial buffer never delivered")
+        t.eq(outcome, "failed")
+        t.ok(not zosung.rx_busy(d))
+      end)
+    end },
+    { "stale transmit status before any chunk is ignored", function(t)
+      with_stub_zigbee(function()
+        local d = fake_device()
+        local statuses = 0
+        local orig = zosung.on_tx_status
+        zosung.on_tx_status = function() statuses = statuses + 1 end
+        zosung.begin_transmit(d, '{"x":1}')
+        inbound(d, 0x04, string.pack("<I1I2", 0, 0))
+        t.eq(statuses, 0, "late status of an abandoned transfer ignored")
+        t.ok(zosung.tx_active(d))
+        inbound(d, 0x02, zosung.frame_02(0, 0, 0x38))
+        inbound(d, 0x04, string.pack("<I1I2", 0, 0))
+        t.eq(statuses, 1)
+        zosung.on_tx_status = orig
+      end)
+    end },
+    { "queue waits while the bridge is learning", function(t)
+      with_fake_radio(function(sent)
+        local d = fake_device()
+        d.fields.zosung_learning = 1
+        tx_queue.enqueue(d, { code = "K" })
+        d:run(0.5)
+        t.eq(#sent, 0, "held during learning")
+        d.fields.zosung_learning = nil
+        d:run(1)
+        t.eq(#sent, 1, "released after learning")
       end)
     end },
   },

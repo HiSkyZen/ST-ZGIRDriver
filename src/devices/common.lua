@@ -75,15 +75,17 @@ end
 -- already matches and is recent; stale state always transmits.
 function M.set_power(ctx, on)
   local discrete = on and "power_on" or "power_off"
+  local want = on and "on" or "off"
   local current = ctx.state.desired.power
+  local opts = { fields = { "power" }, commanded = { power = want } }
   local sent
   if ctx.has(discrete) then
-    sent = ctx.send_key(discrete)
+    sent = ctx.send_key(discrete, opts)
   elseif ctx.has("power") then
-    if current == (on and "on" or "off") and ctx.confident() then
+    if current == want and ctx.confident("power") then
       sent = true
     else
-      sent = ctx.send_key("power")
+      sent = ctx.send_key("power", opts)
     end
   else
     sent = ctx.send_key(discrete) -- reports missing code
@@ -98,10 +100,11 @@ end
 -- Toggle-style boolean (mute, oscillation) with optional discrete keys.
 function M.set_toggle(ctx, field, want, toggle_key, on_key, off_key)
   local current = ctx.state.desired[field]
-  if want and on_key and ctx.has(on_key) then return ctx.send_key(on_key) end
-  if (not want) and off_key and ctx.has(off_key) then return ctx.send_key(off_key) end
-  if current == want and ctx.confident() then return true end
-  return ctx.send_key(toggle_key)
+  local opts = { fields = { field }, commanded = { [field] = want } }
+  if want and on_key and ctx.has(on_key) then return ctx.send_key(on_key, opts) end
+  if (not want) and off_key and ctx.has(off_key) then return ctx.send_key(off_key, opts) end
+  if current == want and ctx.confident(field) then return true end
+  return ctx.send_key(toggle_key, opts)
 end
 
 function M.switch_handlers(handlers)
@@ -134,10 +137,14 @@ function M.volume_handlers(handlers)
       local cur = ctx.state.desired.volume or 0
       local diff = math.max(-M.MAX_VOLUME_STEPS, math.min(M.MAX_VOLUME_STEPS, target - cur))
       local key = diff > 0 and "vol_up" or "vol_down"
+      local step = diff > 0 and 1 or -1
+      local done = 0
       for _ = 1, math.abs(diff) do
         if not ctx.send_key(key) then break end
+        done = done + 1
       end
-      emit(ctx, target)
+      -- the estimate only moves by the presses actually queued
+      emit(ctx, cur + step * done)
     end,
   }
   local am = capabilities.audioMute

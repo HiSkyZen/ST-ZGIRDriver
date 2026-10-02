@@ -46,8 +46,8 @@ zosung.on_learned = function(device, code, raw_len)
   end
 end
 
-zosung.on_learn_timeout = function(device)
-  if not learning.on_timeout(driver, device) then bridge.on_raw_timeout(device) end
+zosung.on_learn_timeout = function(device, outcome)
+  if not learning.on_timeout(driver, device, outcome) then bridge.on_raw_timeout(device) end
 end
 
 --------------------------------------------------------------------------

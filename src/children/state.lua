@@ -67,28 +67,44 @@ function M.flush(device)
   log.debug("[ZGIR] state checkpoint " .. (device.label or device.id) .. " " .. util.json_canonical(copy.desired))
 end
 
--- Merge `patch` into desired state.
+-- Merge `patch` into desired state.  Confidence is tracked per field: only
+-- the fields in the patch become trusted (a volume press says nothing about power).
 function M.update(device, patch, source)
   local st = M.get(device)
-  for k, v in pairs(patch) do st.desired[k] = v end
+  st.conf = st.conf or {}
+  local now = os.time()
+  for k, v in pairs(patch) do
+    st.desired[k] = v
+    st.conf[k] = now
+  end
   st.source = source or "commanded"
-  st.updated = os.time()
+  st.updated = now
   st.confidence = "high"
   schedule_checkpoint(device, st)
   return st
 end
 
--- Record that the desired values were transmitted successfully.
+-- Record values that were actually transmitted successfully (a snapshot taken
+-- when the request was queued, not the current desired state).
 function M.commanded(device, values)
+  if not values then return end
   local st = M.get(device)
-  for k, v in pairs(values or st.desired) do st.last_commanded[k] = util.deep_copy(v) end
+  for k, v in pairs(values) do st.last_commanded[k] = util.deep_copy(v) end
   st.updated = os.time()
   schedule_checkpoint(device, st)
 end
 
-function M.is_confident(device)
+-- A transmission failed: the assumed values of these fields are not trusted.
+function M.invalidate(device, fields)
   local st = M.get(device)
-  return st.confidence == "high" and os.time() - st.updated <= M.STALE_SEC
+  st.conf = st.conf or {}
+  for _, k in ipairs(fields or {}) do st.conf[k] = nil end
+end
+
+function M.is_confident(device, field)
+  local st = M.get(device)
+  local t = st.conf and st.conf[field]
+  return t ~= nil and os.time() - t <= M.STALE_SEC
 end
 
 return M

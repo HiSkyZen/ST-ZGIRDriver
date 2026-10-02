@@ -53,7 +53,8 @@ local function norm_dim(v)
 end
 local function state_key(mode, fan, swing, temp)
   local n = tonumber(temp)
-  local formatted = n and tostring(n) or tostring(temp)
+  -- same "%g" formatting as the AC state key contract ("24.0" -> "24")
+  local formatted = n and string.format("%g", n) or tostring(temp)
   return mode .. "|" .. fan .. "|" .. swing .. "|" .. formatted
 end
 

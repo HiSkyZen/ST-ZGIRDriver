@@ -61,8 +61,9 @@ handlers.createRemote = function(driver, device, cmd)
 end
 
 handlers.learnRaw = function(driver, device)
-  learning.claim_for_bridge(device)
-  zosung.start_learning(device)
+  if not learning.acquire(device, "bridge") then
+    return M.status(device, "다른 리모컨이 학습 중입니다. 잠시 후 다시 시도하세요.")
+  end
   M.status(device, "원시 코드 학습 대기 중 — 리모컨 버튼을 누르세요")
 end
 

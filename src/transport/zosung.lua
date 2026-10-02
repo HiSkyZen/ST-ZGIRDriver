@@ -21,6 +21,7 @@ M.LEARN_TIMEOUT_SEC = 30
 M.CHUNK_RETRY_SEC = 5 -- the device can take >3 s to answer the first request
 M.CHUNK_RETRIES = 5
 M.FIRST_CHUNK_WAIT_SEC = 10
+M.FINISH_WAIT_SEC = 5
 -- Firmware 23062026 requests chunks with seq=0 regardless of the announced
 -- sequence, so every outbound transfer uses seq 0 and transfers are serialized.
 M.TX_SEQ = 0
@@ -31,7 +32,7 @@ local F_LEARN = "zosung_learning" -- learning window token
 
 -- sinks set by init.lua
 M.on_learned = function(device, code_b64, raw_len) end
-M.on_learn_timeout = function(device) end
+M.on_learn_timeout = function(device, outcome) end
 M.on_tx_status = function(device, ok, status) end
 
 local function crc(bytes)
@@ -82,26 +83,65 @@ function M.is_learning(device)
   return device:get_field(F_LEARN) ~= nil
 end
 
-function M.start_learning(device, timeout_sec)
+-- Bridge busy with learning (window open or learned transfer in progress):
+-- outbound transfers must wait (the ED00 cluster carries one transfer at a time).
+function M.rx_busy(device)
+  return device:get_field(F_LEARN) ~= nil or device:get_field(F_RX) ~= nil
+end
+
+-- Single terminal path for a learning attempt.  outcome: "timeout" | "failed".
+local function end_learning(device, outcome, why)
+  local had = device:get_field(F_LEARN) ~= nil or device:get_field(F_RX) ~= nil
+  device:set_field(F_RX, nil)
+  if device:get_field(F_LEARN) ~= nil then M.stop_learning(device) end
+  if had then
+    log.warn("[ZGIR] learning ended: " .. outcome .. (why and (" (" .. why .. ")") or ""))
+    M.on_learn_timeout(device, outcome)
+  end
+end
+
+local function open_window(device, timeout_sec)
   local token = (device:get_field("zosung_learn_seqno") or 0) + 1
   device:set_field("zosung_learn_seqno", token)
   device:set_field(F_LEARN, token)
   device:set_field(F_RX, nil)
   log.info("[ZGIR] E004 study=0 (learning window open)")
   zigbee.send_cluster_command(device, M.CLUSTER_CONTROL, 0x00, json.encode({ study = 0 }))
-  device.thread:call_with_delay(timeout_sec or M.LEARN_TIMEOUT_SEC, function()
-    if device:get_field(F_LEARN) == token and device:get_field(F_RX) == nil then
-      log.warn("[ZGIR] learning timed out")
-      M.stop_learning(device)
-      M.on_learn_timeout(device)
+  local function check(extra)
+    if device:get_field(F_LEARN) ~= token then return end
+    local rx = device:get_field(F_RX)
+    if rx == nil then return end_learning(device, "timeout") end
+    -- a transfer is in progress: give it a bounded grace period
+    if extra < 2 then
+      return device.thread:call_with_delay(10, function() check(extra + 1) end)
     end
-  end)
+    end_learning(device, "failed", "transfer did not finish")
+  end
+  device.thread:call_with_delay(timeout_sec or M.LEARN_TIMEOUT_SEC, function() check(0) end)
+end
+
+-- Opening the window waits for an in-flight outbound transfer (bounded).
+function M.start_learning(device, timeout_sec, attempt)
+  attempt = attempt or 0
+  if device:get_field(F_TX) ~= nil and attempt < 40 then
+    return device.thread:call_with_delay(0.5, function() M.start_learning(device, timeout_sec, attempt + 1) end)
+  end
+  open_window(device, timeout_sec)
 end
 
 function M.stop_learning(device)
   device:set_field(F_LEARN, nil)
   log.info("[ZGIR] E004 study=1 (learning window closed)")
   zigbee.send_cluster_command(device, M.CLUSTER_CONTROL, 0x00, json.encode({ study = 1 }))
+end
+
+local function deliver(device, rx)
+  device:set_field(F_RX, nil)
+  local code = util.b64_encode(rx.buffer)
+  log.info(string.format("[ZGIR] LEARN SUCCESS raw_bytes=%d", #rx.buffer))
+  log.info("[ZGIR] LEARNED_CODE=" .. code)
+  if M.is_learning(device) then M.stop_learning(device) end
+  M.on_learned(device, code, #rx.buffer)
 end
 
 local function request_chunk(device, rx)
@@ -115,9 +155,7 @@ local function request_chunk(device, rx)
     if cur ~= rx or rx.req_id ~= req or rx.done then return end
     rx.retries = (rx.retries or 0) + 1
     if rx.retries > M.CHUNK_RETRIES then
-      log.warn("[ZGIR] learn transfer stalled; giving up at " .. #rx.buffer .. "/" .. rx.length)
-      device:set_field(F_RX, nil)
-      return
+      return end_learning(device, "failed", "transfer stalled at " .. #rx.buffer .. "/" .. rx.length)
     end
     log.debug("[ZGIR] learn chunk retry pos=" .. #rx.buffer)
     request_chunk(device, rx)
@@ -163,7 +201,7 @@ local function rx_03(driver, device, zb_rx)
   zigbee.ack(device, M.CLUSTER_TRANSFER, zclh)
   local ok, _, seq, position = unpack_safe("<I1I2I4", body)
   local part_len = body:byte(8)
-  if not ok or part_len == nil or #body < 8 + part_len then
+  if not ok or part_len == nil or #body < 9 + part_len then -- data + checksum byte
     return log.warn("[ZGIR] malformed ED00/0x03 len=" .. #body)
   end
   local rx = device:get_field(F_RX)
@@ -172,11 +210,11 @@ local function rx_03(driver, device, zb_rx)
   end
   local part = body:sub(9, 8 + part_len)
   local sum = body:byte(9 + part_len)
-  if sum ~= nil and sum ~= crc(part) then
+  if sum ~= crc(part) then
     log.warn("[ZGIR] learn chunk checksum mismatch at pos=" .. position .. "; re-requesting")
     return request_chunk(device, rx)
   end
-  if position > #rx.buffer then
+  if position > #rx.buffer or position + #part > rx.length then
     log.warn("[ZGIR] learn chunk gap pos=" .. position .. " have=" .. #rx.buffer)
     return request_chunk(device, rx)
   end
@@ -189,6 +227,14 @@ local function rx_03(driver, device, zb_rx)
     rx.done = true
     rx.req_id = (rx.req_id or 0) + 1
     send(device, 0x04, M.frame_04(seq))
+    -- the buffer is complete and checksummed; if the 0x05 finish is lost,
+    -- deliver anyway instead of leaving the bridge busy
+    device.thread:call_with_delay(M.FINISH_WAIT_SEC, function()
+      if device:get_field(F_RX) == rx then
+        log.warn("[ZGIR] learn finish (0x05) not received; delivering complete buffer")
+        deliver(device, rx)
+      end
+    end)
   end
 end
 
@@ -199,8 +245,13 @@ local function rx_04(driver, device, zb_rx)
   if not ok then return log.warn("[ZGIR] malformed ED00/0x04") end
   send(device, 0x05, M.frame_05(seq))
   local tx = device:get_field(F_TX)
-  device:set_field(F_TX, nil)
   if tx == nil then return log.debug("[ZGIR] transmit status without active transmit") end
+  if (tx.chunks or 0) == 0 then
+    -- seq is always 0, so a late status of an abandoned transfer is only
+    -- recognisable by phase: this transfer has not delivered any chunk yet
+    return log.warn("[ZGIR] ignoring transmit status before any chunk was requested (stale)")
+  end
+  device:set_field(F_TX, nil)
   if status == 0 then
     log.info(string.format("[ZGIR] IR TRANSMIT COMPLETED seq=%d bytes=%d", seq, #tx.msg))
   else
@@ -212,18 +263,12 @@ end
 local function rx_05(driver, device, zb_rx)
   zigbee.ack(device, M.CLUSTER_TRANSFER, zb_rx.body.zcl_header)
   local rx = device:get_field(F_RX)
-  device:set_field(F_RX, nil)
   if rx == nil then return log.debug("[ZGIR] 0x05 without learn transfer") end
-  rx.done = true
-  if #rx.buffer ~= rx.length then
-    log.warn(string.format("[ZGIR] learned length mismatch got=%d expected=%d", #rx.buffer, rx.length))
-    if #rx.buffer == 0 then return end
+  if not rx.done or #rx.buffer ~= rx.length then
+    return end_learning(device, "failed",
+      string.format("finish before transfer complete got=%d expected=%d", #rx.buffer, rx.length))
   end
-  local code = util.b64_encode(rx.buffer)
-  log.info(string.format("[ZGIR] LEARN SUCCESS raw_bytes=%d", #rx.buffer))
-  log.info("[ZGIR] LEARNED_CODE=" .. code)
-  if M.is_learning(device) then M.stop_learning(device) end
-  M.on_learned(device, code, #rx.buffer)
+  deliver(device, rx)
 end
 
 -- Begin an outbound transfer of an IR JSON message.  Caller (tx_queue)

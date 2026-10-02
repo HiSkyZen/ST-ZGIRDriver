@@ -39,19 +39,50 @@ local SWING_FROM_ST = { off = "off", fixed = "off", all = "on", vertical = "vert
 
 -- Explicit constraints (learned or imported) win; an explicitly empty
 -- fan/swing list means the remote has no such dimension (state key "-").
+-- Constraints come from imports/packs (untrusted), so every field is
+-- sanitized here: finite numbers, positive step, bounded state count and
+-- lists of short strings.  Anything invalid falls back to the defaults.
+M.MAX_TEMP_STEPS = 64
+
+local function finite(v)
+  return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+
+local function string_list(v, max)
+  if type(v) ~= "table" then return nil end
+  local out, seen = {}, {}
+  for _, x in ipairs(v) do
+    if type(x) == "string" and #x > 0 and #x <= 32 and not x:find("|", 1, true) and not seen[x] then
+      out[#out + 1] = x
+      seen[x] = true
+      if #out >= max then break end
+    end
+  end
+  return out
+end
+
 function M.constraints(def)
-  local explicit = def.ac and def.ac.constraints
+  local explicit = type(def.ac) == "table" and type(def.ac.constraints) == "table" and def.ac.constraints or nil
   local c = explicit or {}
   local d = M.DEFAULT_CONSTRAINTS
-  local function list(v, default)
-    if type(v) == "table" and (#v > 0 or explicit) then return v end
+  local min_t = finite(c.min_temp) and c.min_temp or d.min_temp
+  local max_t = finite(c.max_temp) and c.max_temp or d.max_temp
+  local step = (finite(c.step) and c.step > 0) and c.step or d.step
+  if min_t > max_t or (max_t - min_t) / step > M.MAX_TEMP_STEPS then
+    min_t, max_t, step = d.min_temp, d.max_temp, d.step
+  end
+  local modes = string_list(c.modes, 8)
+  if not modes or #modes == 0 then modes = d.modes end
+  -- an explicitly empty fan/swing list means "this remote has no such dimension"
+  local function dim(v, default)
+    local l = string_list(v, 16)
+    if l and (#l > 0 or explicit) then return l end
     return default
   end
   return {
-    min_temp = c.min_temp or d.min_temp, max_temp = c.max_temp or d.max_temp, step = c.step or d.step,
-    modes = (c.modes and #c.modes > 0) and c.modes or d.modes,
-    fan_modes = list(c.fan_modes, d.fan_modes),
-    swing_modes = list(c.swing_modes, d.swing_modes),
+    min_temp = min_t, max_temp = max_t, step = step, modes = modes,
+    fan_modes = dim(c.fan_modes, d.fan_modes),
+    swing_modes = dim(c.swing_modes, d.swing_modes),
   }
 end
 
@@ -107,6 +138,11 @@ end
 
 -- Apply a patch to the logical state and transmit the resulting full state.
 function M.apply(ctx, patch)
+  if ctx.def.active == false then
+    -- imported remotes transmit only after the compatibility test was confirmed
+    ctx.prompt("가져온 에어컨 리모컨이 아직 확인되지 않았습니다. '재시도'로 시험 송신 후 '확인'을 누르세요.", "verify-import")
+    return false
+  end
   local st = ctx.update(patch)
   local s = st.desired
   local code, method_or_err, carrier = M.resolve(ctx.def, s)
@@ -118,8 +154,13 @@ function M.apply(ctx, patch)
   end
   local key = M.state_key(M.normalize(ctx.def, s))
   log.info(string.format("[ZGIR] AC state %s via %s", key, method_or_err))
+  local snapshot = {}
+  for k, v in pairs(s) do snapshot[k] = v end
+  local fields = {}
+  for k in pairs(patch) do fields[#fields + 1] = k end
   ctx.send_code(code, carrier, {
     label = "ac:" .. key, coalesce = "ac:" .. ctx.device.id, delay = M.COALESCE_DELAY,
+    commanded = snapshot, fields = fields,
   })
   M.emit_all(ctx)
   return true

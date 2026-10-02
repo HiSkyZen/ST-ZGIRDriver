@@ -58,6 +58,14 @@ return {
       local back = assert(native.decode(native.encode(nec)))
       t.ok(require("ir.signal").timings_close(nec.timings_us, back.timings_us, 0.03), "NEC round trip")
     end },
+    { "untrusted AC constraints are sanitized", function(t)
+      local c = ac.constraints({ ac = { constraints = { min_temp = 24, max_temp = 24, step = 0, modes = 1, fan_modes = { "auto", 3 } } } })
+      t.ok(c.step > 0, "positive step")
+      t.ok(#c.modes > 0, "modes fallback")
+      t.same(c.fan_modes, { "auto" })
+      local wide = ac.constraints({ ac = { constraints = { min_temp = 0, max_temp = 1e9, step = 1 } } })
+      t.eq(wide.max_temp, 30, "unbounded range rejected")
+    end },
     { "key helpers", function(t)
       t.same(common.sorted_keys({ ok = 1, power = 1, zz_custom = 1, vol_up = 1 }), { "power", "vol_up", "ok", "zz_custom" })
       t.eq(common.sanitize_key("Vol Up!"), "vol_up")

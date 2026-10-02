@@ -37,16 +37,23 @@ local function parent_of(device)
   return device:get_parent_device()
 end
 
+-- One learning owner per bridge (a child id or "bridge").  Returns true when
+-- `owner_id` got the window.
+function M.acquire(parent, owner_id)
+  local owner = parent:get_field(F_OWNER)
+  if owner and owner.device_id ~= owner_id and zosung.rx_busy(parent) then return false end
+  parent:set_field(F_OWNER, { device_id = owner_id })
+  zosung.start_learning(parent)
+  return true
+end
+
 local function open_window(child)
   local parent = parent_of(child)
   if not parent then return false end
-  local owner = parent:get_field(F_OWNER)
-  if owner and owner.device_id ~= child.id and zosung.is_learning(parent) then
-    prompt(child, "다른 리모컨이 학습 중입니다. 잠시 후 다시 시도하세요.", "busy")
+  if not M.acquire(parent, child.id) then
+    prompt(child, "다른 리모컨(또는 브리지)이 학습 중입니다. 잠시 후 다시 시도하세요.", "busy")
     return false
   end
-  parent:set_field(F_OWNER, { device_id = child.id })
-  zosung.start_learning(parent)
   return true
 end
 
@@ -146,9 +153,12 @@ end
 local function raw_ac_sequence(def)
   local c = require("devices.ac").constraints(def)
   local seq = { { power = "off" } }
+  -- constraints are sanitized (step > 0, bounded range); the count guard is a second line of defence
+  local steps = math.floor((c.max_temp - c.min_temp) / c.step + 0.5)
   for _, mode in ipairs(c.modes) do
-    for t = c.min_temp, c.max_temp, c.step do
-      seq[#seq + 1] = { power = "on", mode = mode, fan = c.fan_modes[1], swing = c.swing_modes[1], temp = t }
+    for i = 0, math.min(steps, 64) do
+      seq[#seq + 1] = { power = "on", mode = mode, fan = c.fan_modes[1], swing = c.swing_modes[1],
+        temp = c.min_temp + i * c.step }
     end
   end
   return seq
@@ -215,13 +225,21 @@ local function on_ac_code(child, session, code, sig)
     local ok, err = session.learner:add_sample(s, sig)
     if not ok then log.warn("[ZGIR] add_sample rejected: " .. tostring(err)) end
     session.analyzing = true
+    local rev = (store.get(child) or {}).rev
     -- analysis runs after the prompt/test transmit have been handed off
     child.thread:call_with_delay(0.5, function()
       local t0 = os.time()
       local aok, model, rep = pcall(session.learner.analyze, session.learner)
       local d = store.get(child)
-      if d and d.ac then
-        if aok and model then d.ac.model = model end
+      -- discard results if the session was replaced or the definition changed
+      -- meanwhile (import, cancel + new session, ...)
+      if child:get_field(F_SESSION) ~= session or not d or d.rev ~= rev then
+        session.analyzing = false
+        return log.info("[ZGIR] AC analysis result discarded (definition changed)")
+      end
+      if d.ac then
+        -- new evidence that no longer fits the old model invalidates it
+        d.ac.model = (aok and model) or nil
         local eok, exported = pcall(session.learner.export, session.learner)
         if eok then d.ac.learner = exported end
         store.save(child, d, "ac analysis")
@@ -363,7 +381,7 @@ function M.on_learned(driver, parent, code)
   return true
 end
 
-function M.on_timeout(driver, parent)
+function M.on_timeout(driver, parent, outcome)
   local owner = parent:get_field(F_OWNER)
   parent:set_field(F_OWNER, nil)
   if owner == nil or owner.device_id == "bridge" then return false end
@@ -371,12 +389,12 @@ function M.on_timeout(driver, parent)
   if child == nil then return false end
   local session = child:get_field(F_SESSION)
   if session then session.phase = "timeout" end
-  prompt(child, "신호를 받지 못했습니다. '재시도' 또는 '건너뛰기'를 눌러 주세요.", "timeout")
+  if outcome == "failed" then
+    prompt(child, "신호 수신이 중간에 끊겼습니다. '재시도'를 눌러 다시 학습하세요.", "error")
+  else
+    prompt(child, "신호를 받지 못했습니다. '재시도' 또는 '건너뛰기'를 눌러 주세요.", "timeout")
+  end
   return true
-end
-
-function M.claim_for_bridge(parent)
-  parent:set_field(F_OWNER, { device_id = "bridge" })
 end
 
 return M

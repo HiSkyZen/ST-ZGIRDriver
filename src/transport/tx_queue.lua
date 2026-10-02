@@ -15,6 +15,8 @@ local M = {}
 
 M.WATCHDOG_SEC = 15
 M.STALL_SEC = 5        -- no chunk request at all by then: the device dropped the start
+M.DRAIN_SEC = 2        -- quiet time after an abandoned transfer before the next start
+M.BUSY_POLL_SEC = 1    -- re-check interval while the bridge is learning
 M.MAX_ATTEMPTS = 2       -- first try + one retry after watchdog timeout
 M.INTER_FRAME_SEC = 0.25 -- settle time between consecutive transfers
 M.MAX_QUEUE = 40
@@ -51,6 +53,7 @@ local function start(device, st, item)
     st.gen = st.gen + 1
     zosung.abort_transmit(device)
     st.inflight = nil
+    st.drain = true
     if item.attempt < M.MAX_ATTEMPTS then
       log.warn("[ZGIR] TXQ " .. reason .. ": retrying " .. (item.label or "?"))
       table.insert(st.items, 1, item)
@@ -69,11 +72,24 @@ end
 pump = function(device)
   local st = q(device)
   if st.inflight ~= nil or st.pumping then return end
+  if #st.items > 0 and zosung.rx_busy(device) then
+    -- learning owns the ED00 cluster; keep the queue and look again shortly
+    if not st.busy_wait then
+      st.busy_wait = true
+      device.thread:call_with_delay(M.BUSY_POLL_SEC, function()
+        st.busy_wait = false
+        pump(device)
+      end)
+    end
+    return
+  end
   for idx, item in ipairs(st.items) do
     if item.ready then
       table.remove(st.items, idx)
       st.pumping = true
-      device.thread:call_with_delay(st.last_done and M.INTER_FRAME_SEC or 0, function()
+      local gap = st.drain and M.DRAIN_SEC or (st.last_done and M.INTER_FRAME_SEC or 0)
+      st.drain = false
+      device.thread:call_with_delay(gap, function()
         st.pumping = false
         if st.inflight ~= nil then
           table.insert(st.items, 1, item)

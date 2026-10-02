@@ -54,24 +54,41 @@ local function pack_info(child)
 end
 M.pack_info = pack_info
 
--- Accumulate "@part i/n data" pieces; returns full text when complete.
+M.MAX_PARTS = 128
+M.MAX_IMPORT_BYTES = 512 * 1024
+M.PARTS_TTL_SEC = 600
+
+-- Accumulate "@part i/n data" pieces; returns full text when every part 1..n
+-- arrived.  Bounded in count, total size and lifetime.
 local function assemble(child, text)
   local i, n, data = text:match("^@part%s+(%d+)/(%d+)%s+(.*)$")
   if not i then return text end
-  i, n = tonumber(i), tonumber(n)
+  i, n = math.tointeger(tonumber(i)), math.tointeger(tonumber(n))
+  if not i or not n or n < 1 or n > M.MAX_PARTS or i < 1 or i > n then
+    status(child, "잘못된 분할 번호")
+    return nil
+  end
   local parts = child:get_field(F_PARTS)
-  if i == 1 or parts == nil or parts.n ~= n then parts = { n = n, got = {} } end
+  local now = os.time()
+  if parts == nil or parts.n ~= n or now - parts.started > M.PARTS_TTL_SEC then
+    parts = { n = n, got = {}, count = 0, bytes = 0, started = now }
+  end
+  if parts.got[i] == nil then parts.count = parts.count + 1 else parts.bytes = parts.bytes - #parts.got[i] end
   parts.got[i] = data
+  parts.bytes = parts.bytes + #data
+  if parts.bytes > M.MAX_IMPORT_BYTES then
+    child:set_field(F_PARTS, nil)
+    status(child, "가져오기 데이터가 너무 큽니다")
+    return nil
+  end
   child:set_field(F_PARTS, parts)
-  local have = 0
-  for _ in pairs(parts.got) do have = have + 1 end
-  if have < n then
-    status(child, string.format("수신 중 %d/%d", have, n))
+  if parts.count < n then
+    status(child, string.format("수신 중 %d/%d", parts.count, n))
     return nil
   end
   child:set_field(F_PARTS, nil)
   local all = {}
-  for k = 1, n do all[k] = parts.got[k] or "" end
+  for k = 1, n do all[k] = parts.got[k] end
   return table.concat(all)
 end
 
