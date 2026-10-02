@@ -79,7 +79,11 @@ function M.run(filter)
         local label = (mod.name or modname) .. "/" .. tostring(case[1])
         if filter == nil or filter == "" or label:find(filter, 1, true) then
           local t = make_t()
+          local t0 = os.time()
+          log.debug("[ZGIR][TEST] start " .. label)
           local cok, cerr = pcall(case[2], t)
+          local dt = os.time() - t0
+          if dt >= 2 then log.warn(string.format("[ZGIR][TEST] slow %s %ds", label, dt)) end
           if cok then
             res.passed = res.passed + 1
           else
