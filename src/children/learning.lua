@@ -255,8 +255,14 @@ end
 --------------------------------------------------------------------------
 -- UI commands
 
+local function import_pending(child)
+  local def = store.get(child)
+  return def and def.active == false
+end
+
 function M.confirm(child)
   local session = child:get_field(F_SESSION)
+  if session == nil and import_pending(child) then session = { mode = "import" } end
   if session == nil then return prompt(child, "진행 중인 학습이 없습니다.", "idle") end
   if session.mode == "import" then
     local def = store.get(child)
@@ -274,6 +280,7 @@ end
 
 function M.retry(child)
   local session = child:get_field(F_SESSION)
+  if session == nil and import_pending(child) then return M.begin_import_verify(child) end
   if session == nil then return prompt(child, "진행 중인 학습이 없습니다.", "idle") end
   if session.mode == "import" then return M.begin_import_verify(child) end
   if session.mode == "ac" then

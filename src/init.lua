@@ -95,9 +95,16 @@ capability_handlers[capabilities.refresh.ID] = {
 -- lifecycle
 
 local function child_ready(drv, child)
-  manager.ensure_def(child)
+  local def = manager.ensure_def(child)
   dispatcher.refresh_ui(child)
   remote_io.pack_info(child)
+  if def.active == false then
+    -- verification state is derived from the persisted definition, so it
+    -- survives restarts and the added -> init lifecycle ordering
+    child:emit_event(caps.learning.learnStatus({ value = "verify-import" }))
+    child:emit_event(caps.learning.prompt({ value = "가져온 리모컨을 확인하세요: '재시도'로 시험 송신, 동작하면 '확인'." }))
+    return
+  end
   child:emit_event(caps.learning.learnStatus({ value = "idle" }))
   child:emit_event(caps.learning.prompt({ value = "'학습 시작' 또는 버튼 이름 입력으로 학습하세요." }))
 end
@@ -105,7 +112,6 @@ end
 local function device_added(drv, device)
   if manager.is_child(device) then
     local def = manager.on_child_added(drv, device)
-    child_ready(drv, device)
     if def.active == false then learning.begin_import_verify(device) end
     return
   end
