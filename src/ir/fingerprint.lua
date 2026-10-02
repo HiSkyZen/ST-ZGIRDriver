@@ -20,7 +20,8 @@ local function first_frame(sig)
     local median = ordered[math.ceil(#ordered / 2)]
     local largest = spaces[1]
     for _, g in ipairs(spaces) do if g.v > largest.v then largest = g end end
-    if largest.v > 5 * median then cut = largest.i end
+    -- an inter-frame gap is long in absolute terms too; never the header space
+    if largest.v > 5 * median and largest.v >= 10000 and largest.i > 4 then cut = largest.i end
   end
   local out = {}
   for i = 1, (cut or (#t + 1)) - 1 do out[#out + 1] = t[i] end
@@ -54,15 +55,9 @@ local function quantize(t)
     for j, c in ipairs(centers[p]) do if math.abs(v-c) < dist then best,dist=j,math.abs(v-c) end end
     seq[i] = tostring(best)
   end
-  local ratios = {}
-  for p = 1, 2 do
-    local c = centers[p]
-    for j = 2, #c do
-      local ratio = c[j] / c[1]
-      local bucket = ratio < 1.5 and 0 or (ratio <= 6 and 1 or (ratio <= 12 and 2 or 3))
-      ratios[#ratios + 1] = tostring(bucket)
-    end
-  end
+  -- Ratio buckets were tried and rejected: jitter pushes ratios across bucket
+  -- boundaries.  Symbol sequence + cluster counts is jitter-stable.
+  local ratios = { tostring(#centers[1]), tostring(#centers[2]) }
   return table.concat(seq, ""), table.concat(ratios, ",")
 end
 

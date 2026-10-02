@@ -173,7 +173,7 @@ function M.export(driver, child)
   local def = store.get(child)
   local exporter = opt("packs.export")
   if not (def and exporter) then return status(child, "내보내기를 사용할 수 없습니다") end
-  local ok, text, id = pcall(exporter.export, def, { author = M.AUTHOR, created = os.date("!%Y-%m-%d") })
+  local ok, text, id = pcall(exporter.export, def, { author = M.AUTHOR, created = (pcall(os.date, "!%Y-%m-%d") and os.date("!%Y-%m-%d")) or "" })
   if not ok or not text then return status(child, "내보내기 오류: " .. tostring(text)) end
   if def.meta.pack_id ~= id then
     def.meta.pack_id = id

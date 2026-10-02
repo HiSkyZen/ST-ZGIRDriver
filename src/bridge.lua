@@ -75,7 +75,8 @@ end
 
 handlers.selfTest = function(driver, device, cmd)
   local selftest = require "selftest"
-  local res = selftest.run(cmd.args.filter)
+  local ok, res = pcall(selftest.run, cmd.args.filter)
+  if not ok then return M.status(device, "selftest crashed: " .. tostring(res)) end
   local text = string.format("selftest passed=%d failed=%d", res.passed, res.failed)
   if res.failed > 0 then text = text .. " first: " .. tostring(res.failures[1]) end
   M.status(device, text)

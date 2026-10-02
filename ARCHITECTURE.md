@@ -7,7 +7,8 @@ Authoritative interface record for all workstreams. Requirements source:
 
 - SmartThings Edge, Lua **5.3** (integers, `//`, bitwise ops, `string.pack`).
 - No local Lua toolchain. Pure modules are verified **on the hub** through
-  `src/selftest.lua` (bridge command `selfTest`) and `smartthings edge:drivers:logcat`.
+  `src/selftest.lua` (bridge command `selfTest`; test modules live in `src/selftests/` because the
+  Edge packager strips `src/tests/`) and `smartthings edge:drivers:logcat`.
 - Pure modules may require only: `util`, `ir.*`, `import.*`, `packs.*`,
   `analysis.*`, `st.json`, `log`. No `st.zigbee`, no device objects, no timers.
 - Error convention: functions taking external input never throw; they return

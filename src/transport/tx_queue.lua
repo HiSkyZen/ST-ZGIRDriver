@@ -110,7 +110,7 @@ function M.enqueue(device, req)
         local old_done = item.on_done
         item.code, item.freq, item.label, item.on_done = req.code, req.freq, req.label, req.on_done
         item.delay = req.delay
-        if old_done and old_done ~= req.on_done then pcall(old_done, false, "superseded") end
+        if old_done then pcall(old_done, false, "superseded") end
         arm(device, st, item)
         return true
       end
@@ -137,7 +137,11 @@ function M.on_tx_status(device, ok, status)
   st.inflight = nil
   st.last_done = true
   st.gen = st.gen + 1
-  if item then finish(item, ok, ok and nil or string.format("device status 0x%02X", status or 0xFF)) end
+  if item then
+    local err = nil
+    if not ok then err = string.format("device status 0x%02X", status or 0xFF) end
+    finish(item, ok, err)
+  end
   pump(device)
 end
 
