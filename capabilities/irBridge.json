@@ -1,0 +1,80 @@
+{
+  "name": "IR Bridge",
+  "attributes": {
+    "bridgeStatus": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "remotes": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "createRemote": {
+      "name": "createRemote",
+      "arguments": [
+        {
+          "name": "spec",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      ]
+    },
+    "learnRaw": {
+      "name": "learnRaw",
+      "arguments": []
+    },
+    "sendCode": {
+      "name": "sendCode",
+      "arguments": [
+        {
+          "name": "code",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 60000
+          }
+        }
+      ]
+    },
+    "selfTest": {
+      "name": "selfTest",
+      "arguments": [
+        {
+          "name": "filter",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      ]
+    }
+  }
+}

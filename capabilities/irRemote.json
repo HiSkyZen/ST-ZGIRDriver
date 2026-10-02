@@ -1,0 +1,53 @@
+{
+  "name": "IR Remote",
+  "attributes": {
+    "supportedKeys": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "lastKey": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "press": {
+      "name": "press",
+      "arguments": [
+        {
+          "name": "key",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "name": "IR Learning",
+  "attributes": {
+    "learnStatus": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "prompt": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "currentKey": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "startGuided": {
+      "name": "startGuided",
+      "arguments": []
+    },
+    "learn": {
+      "name": "learn",
+      "arguments": [
+        {
+          "name": "key",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      ]
+    },
+    "confirm": {
+      "name": "confirm",
+      "arguments": []
+    },
+    "retry": {
+      "name": "retry",
+      "arguments": []
+    },
+    "skip": {
+      "name": "skip",
+      "arguments": []
+    },
+    "cancel": {
+      "name": "cancel",
+      "arguments": []
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "IR Remote Pack",
+  "attributes": {
+    "packInfo": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "importStatus": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    "exportData": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 60000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "importData": {
+      "name": "importData",
+      "arguments": [
+        {
+          "name": "data",
+          "optional": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 60000
+          }
+        }
+      ]
+    },
+    "exportPack": {
+      "name": "exportPack",
+      "arguments": []
+    }
+  }
+}
