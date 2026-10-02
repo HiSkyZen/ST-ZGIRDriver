@@ -7,8 +7,10 @@ local symbols = require "analysis.symbols"
 local diff = require "analysis.diff"
 local fields = require "analysis.fields"
 local checksum = require "analysis.checksum"
+local work_control = require "analysis.work"
 local M, Learner = {}, {}
 Learner.__index = Learner
+function M.set_yield(fn) return work_control.set_yield(fn) end
 local FLAGS = { "turbo", "eco", "sleep", "display" }
 local DEFAULT_FLAGS = { turbo = false, eco = false, sleep = false, display = true }
 
@@ -127,7 +129,10 @@ local function new(opts)
   if opts ~= nil and type(opts) ~= "table" then return nil, "invalid options" end
   local c, err = constraints(opts and opts.constraints)
   if not c then return nil, err end
-  return setmetatable({ constraints = c, samples = {}, raw_only = {} }, Learner)
+  local budget, berr = work_control.budget(opts and opts.budget_sec)
+  if not budget then return nil, berr end
+  return setmetatable({ constraints = c, samples = {}, raw_only = {}, budget_sec = budget,
+    _revision = 0, _cache = {}, _params = {}, _param_counts = {}, _captured = {} }, Learner)
 end
 function M.new(opts) return protect(new, opts) end
 
@@ -147,7 +152,12 @@ local function add_sample(self, state, sig)
   local copy, verr = canonical_copy(sig)
   if not copy then return nil, verr end
   if #self.samples >= 4096 then return nil, "sample limit reached" end
+  local label = fields.signature(normalized)
   self.samples[#self.samples + 1] = { state = normalized, sig = copy }
+  self._captured[label] = true
+  self._revision = self._revision + 1
+  self._request_revision = nil
+  if self.model then self._previous_model = self.model end
   self.model, self.report = nil, nil
   return true
 end
@@ -167,7 +177,11 @@ local function patched(model, state, base_bits, partial)
   if type(model) ~= "table" or model.schema ~= 1 or type(model.frames) ~= "table" or type(model.template) ~= "table" or type(model.fields) ~= "table" then
     return nil, "invalid model"
   end
-  local bits = plain(base_bits or model.template)
+  local source, bits = base_bits or model.template, {}
+  for i, bit in ipairs(source) do
+    if bit ~= 0 and bit ~= 1 then return nil, "invalid model bits" end
+    bits[i] = bit
+  end
   local ok, skipped = fields.apply(model.fields, bits, state, partial)
   if not ok then return nil, skipped end
   local frames = frame_bits(model, bits)
@@ -232,7 +246,7 @@ local function coverage(model, c)
 end
 
 -- Bound quadratic field inference while validating every imported sample.
-local function study_indices(samples, c)
+local function study_indices(samples, c, work)
   if #samples <= 128 then local out = {}; for i = 1, #samples do out[i] = i end; return out end
   local desired = baseline(c)
   local function score(state, reference, except)
@@ -246,6 +260,7 @@ local function study_indices(samples, c)
   end
   local first, best = 1, nil
   for i, sample in ipairs(samples) do
+    if work and not work:step(#fields.NAMES) then return nil, "budget" end
     local value = score(sample.state, desired)
     if not best or value < best then first, best = i, value end
   end
@@ -263,6 +278,7 @@ local function study_indices(samples, c)
     for _, value in ipairs(domains[name]) do
       local choice, closest = nil, nil
       for i, sample in ipairs(samples) do
+        if work and not work:step(#fields.NAMES) then return nil, "budget" end
         if sample.state[name] == value then
           local distance = score(sample.state, base, name)
           if not closest or distance < closest then choice, closest = i, distance end
@@ -275,49 +291,86 @@ local function study_indices(samples, c)
   return out
 end
 
-local function analyze(self)
+local function analyze(self, work)
   local report = { status = "raw-only", sample_count = #self.samples, uncertain = {}, raw_only = plain(self.raw_only), checksum_verified = false }
+  if not work:check() then report.reason = "budget"; return nil, report end
   local on, off = {}, nil
-  for _, sample in ipairs(self.samples) do if sample.state.power == "off" then off = sample.sig else on[#on + 1] = sample end end
+  for _, sample in ipairs(self.samples) do
+    if sample.state.power == "off" then off = sample.sig else on[#on + 1] = sample end
+    if not work:step(1) then report.reason = "budget"; return nil, report end
+  end
   if #on == 0 then report.reason = "need an on sample"; self.report = report; return nil, report end
-  local indices = study_indices(on, self.constraints)
+  local indices, ierr = study_indices(on, self.constraints, work)
+  if not indices then report.reason = ierr; return nil, report end
   report.study_count = #indices
-  local split = {}
+  local split, decoded = {}, {}
   for i, sample in ipairs(on) do
-    local a, err = timings.split(sample.sig)
-    if not a then report.reason = err; self.report = report; return nil, report end
-    if i > 1 and #a ~= #split[1] then report.reason = "frame count changes"; self.report = report; return nil, report end
-    split[i] = a
+    local cached = self._cache[sample]
+    if not cached then
+      local parts, err = timings.split(sample.sig, nil, work)
+      if not parts then report.reason = err; return nil, report end
+      cached = { state = sample.state, label = fields.signature(sample.state), split = parts, frames = {}, params = {} }
+      self._cache[sample] = cached
+    end
+    if i > 1 and #cached.split ~= #split[1] then report.reason = "frame count changes"; return nil, report end
+    split[i], decoded[i] = cached.split, cached
   end
   local model = { schema = 1, constraints = plain(self.constraints), frames = {}, fields = {}, template = {},
     carrier_hz = signal.carrier(on[1].sig), off_sig = off and plain(off), checksum_verified = true, training_verified = false }
-  local decoded, offset = {}, 0
-  for i, sample in ipairs(on) do decoded[i] = { state = sample.state, frames = {} } end
+  local offset = 0
   for f = 1, #split[1] do
     local examples, gaps = {}, {}
     for _, index in ipairs(indices) do
       local a = split[index]
       examples[#examples + 1] = a[f]; if a[f].gap_us > 0 then gaps[#gaps + 1] = a[f].gap_us end
     end
-    local params, err = symbols.learn(examples)
-    if not params then report.reason = err; self.report = report; return nil, report end
-    local data = {}
-    for i, a in ipairs(split) do
-      local frame, ferr = symbols.decode_frame(a[f].timings_us, params)
-      if not frame then report.reason = ferr; self.report = report; return nil, report end
-      frame.timings_us = a[f].timings_us
-      decoded[i].frames[f], data[i] = frame, frame
+    local params, data = self._params[f], {}
+    local function decode_all(p)
+      for i, parts in ipairs(split) do
+        local cached, frame = decoded[i], decoded[i].frames[f]
+        if cached.params[f] ~= p then
+          local err
+          frame, err = symbols.decode_frame(parts[f].timings_us, p, work, true)
+          if not frame then return nil, err end
+          frame.timings_us = parts[f].timings_us
+          cached.frames[f], cached.params[f], cached.bits = frame, p, nil
+        end
+        data[i] = frame
+        if not work:step(1) then return nil, "budget" end
+      end
+      return true
     end
-    local study = {}; for _, index in ipairs(indices) do study[#study + 1] = data[index] end
-    local inferred_check = checksum.infer(study)
-    local check = inferred_check and checksum.validate(inferred_check, data)
+    -- Calibrate with the first three on captures before freezing timing centers;
+    -- one jittered capture can bias repeated-frame headers in opposite directions.
+    local valid = params and (#on > 3 or self._param_counts[f] == #on) and decode_all(params)
+    if not valid then
+      if work.expired then report.reason = "budget"; return nil, report end
+      local err
+      params, err = symbols.learn(examples, work, true)
+      if not params then report.reason = err; return nil, report end
+      local ok, derr = decode_all(params)
+      if not ok then report.reason = derr; return nil, report end
+      self._params[f], self._param_counts[f] = params, #on
+    end
+    local previous = self._previous_model
+    local old_check = previous and previous.frames[f] and previous.frames[f].checksum
+    local check = old_check and old_check.verified and checksum.validate(old_check, data, work)
+    if not check or not check.verified then
+      local study = {}; for _, index in ipairs(indices) do study[#study + 1] = data[index] end
+      local inferred_check = checksum.infer(study, work)
+      check = inferred_check and checksum.validate(inferred_check, data, work)
+    end
+    if not work:check() then report.reason = "budget"; return nil, report end
     if not check or not check.verified then model.checksum_verified = false end
     model.frames[f] = { params = params, offset = offset, gap_us = timings.median(gaps) or 0, checksum = check or { verified = false, candidates = {} } }
     offset = offset + params.bit_count
   end
-  for _, s in ipairs(decoded) do s.bits = diff.flatten(s.frames) end
+  for _, s in ipairs(decoded) do
+    if not s.bits then s.bits = diff.flatten(s.frames) end
+    if not work:step(#s.bits) then report.reason = "budget"; return nil, report end
+  end
   model.template = plain(decoded[1].bits)
-  local differences, derr = diff.analyze(decoded)
+  local differences, derr = diff.analyze(decoded, work)
   if not differences then report.reason = derr; self.report = report; return nil, report end
   local excluded, known = {}, {}
   for f, frame in ipairs(model.frames) do
@@ -329,7 +382,7 @@ local function analyze(self)
   end
   for _, p in ipairs(differences.toggles) do excluded[tostring(p)] = true end
   local study = {}; for _, index in ipairs(indices) do study[#study + 1] = decoded[index] end
-  local inferred, freport = fields.infer(study, self.constraints, excluded)
+  local inferred, freport = fields.infer(study, self.constraints, excluded, work)
   if not inferred then report.reason = freport; self.report = report; return nil, report end
   model.fields = inferred
   if #differences.toggles > 0 then model.fields.sequence = { kind = "toggle", positions = differences.toggles, raw_only = true } end
@@ -345,6 +398,7 @@ local function analyze(self)
   local trained = model.unexplained == 0 and model.checksum_verified
   if trained then
     for _, sample in ipairs(decoded) do
+      if not work:step(#sample.bits) then report.reason = "budget"; return nil, report end
       local frames = patched(model, sample.state)
       if not frames then trained = false; break end
       for f, a in ipairs(frames) do
@@ -362,12 +416,38 @@ local function analyze(self)
   report.status = trained and "parametric" or "hybrid"
   if #model.template == 0 or (not model.fields.temp and model.unexplained > 0) then report.status = "raw-only" end
   report.frame_count, report.training_verified = #model.frames, trained
+  if not work:check() then report.reason = "budget"; return nil, report end
   self.model, self.report = model, report
   return model, report
 end
-function Learner:analyze()
-  local ok, model, report = pcall(analyze, self)
-  if not ok then self.model = nil; self.report = { status = "raw-only", reason = "invalid samples" }; return nil, self.report end
+local function run_analysis(self, budget, work)
+  if type(budget) == "table" then budget = budget.budget_sec end
+  local seconds, err = work_control.budget(budget == nil and self.budget_sec or budget)
+  if not seconds then return nil, { status = "raw-only", reason = err } end
+  if self._analysis_revision == self._revision then return self.model, self.report end
+  if self._running then return nil, { status = "raw-only", reason = "analysis in progress" } end
+  work = work or work_control.new(seconds)
+  local revision = self._revision
+  self._running = true
+  local ok, model, report = pcall(analyze, self, work)
+  self._running = nil
+  if work.expired then
+    model = nil
+    report = { status = "raw-only", reason = "budget", sample_count = #self.samples,
+      checksum_verified = false, raw_only = plain(self.raw_only), uncertain = {} }
+  elseif not ok then
+    model, report = nil, { status = "raw-only", reason = "invalid samples" }
+  elseif revision ~= self._revision then
+    model, report = nil, { status = "raw-only", reason = "samples changed" }
+  end
+  report.work_units, report.yield_count = work.units, work.yields
+  self.model, self.report = model, report
+  if report.reason ~= "budget" and report.reason ~= "samples changed" then self._analysis_revision = revision end
+  return model, report
+end
+function Learner:analyze(budget)
+  local ok, model, report = pcall(run_analysis, self, budget)
+  if not ok then return nil, { status = "raw-only", reason = "invalid samples" } end
   return model, report
 end
 
@@ -377,9 +457,7 @@ local function all_states(self)
   return states
 end
 local function captured(self, state)
-  local key = util.json_canonical(state)
-  for _, sample in ipairs(self.samples) do if util.json_canonical(sample.state) == key then return true end end
-  return false
+  return self._captured[fields.signature(state)] == true
 end
 
 local KO = { cool = "냉방", heat = "난방", dry = "제습", fan = "송풍", auto = "자동",
@@ -423,6 +501,7 @@ local function next_request(self)
   local base = baseline(self.constraints)
   if not captured(self, base) then return request(base, "capture baseline") end
   local model, report = self:analyze()
+  if report and (report.reason == "budget" or report.reason == "samples changed" or report.reason == "analysis in progress") then return nil, report.reason end
   local states, c = all_states(self), self.constraints
   local seen = {}
   for _, name in ipairs(fields.NAMES) do
@@ -457,10 +536,17 @@ local function next_request(self)
   -- A candidate may require a combined state to distinguish SUM from XOR.
   -- Each probe still changes one variable relative to an existing capture.
   if model and model.checksum_verified and model.unexplained == 0 then
+    local evaluated = {}
     for _, state in ipairs(states) do
       for _, variation in ipairs(variations(state, c)) do
         if not captured(self, variation.state) then
-          local _, err = patched(model, variation.state)
+          local label = fields.signature(variation.state)
+          local err = evaluated[label]
+          if err == nil then
+            local _
+            _, err = patched(model, variation.state)
+            evaluated[label] = err or false
+          end
           if err == "checksum ambiguous" or (type(err) == "string" and err:find("temperature ambiguous", 1, true)) then
             return request(variation.state, "distinguish remaining encoding hypotheses", variation.name)
           end
@@ -481,17 +567,24 @@ local function next_request(self)
   if self.report then self.report.raw_only = plain(self.raw_only) end
   return nil
 end
-function Learner:next_request() return protect(next_request, self) end
+function Learner:next_request()
+  if self._request_revision == self._revision then return protect(plain, self._request) end
+  local result, err = protect(next_request, self)
+  if not err and (not self.report or (self.report.reason ~= "budget" and self.report.reason ~= "samples changed")) then
+    self._request, self._request_revision = result, self._revision
+  end
+  return result, err
+end
 
 local function export(self)
-  return plain({ schema = 1, constraints = self.constraints, samples = self.samples, model = self.model, report = self.report, raw_only = self.raw_only })
+  return plain({ schema = 1, budget_sec = self.budget_sec, constraints = self.constraints, samples = self.samples, model = self.model, report = self.report, raw_only = self.raw_only })
 end
 function Learner:export() return protect(export, self) end
 
 local function load(input)
   local data = plain(input)
   if type(data) ~= "table" or data.schema ~= 1 or type(data.samples) ~= "table" or #data.samples > 4096 then return nil, "invalid learner export" end
-  local learner, err = new({ constraints = data.constraints })
+  local learner, err = new({ constraints = data.constraints, budget_sec = data.budget_sec })
   if not learner then return nil, err end
   for _, sample in ipairs(data.samples) do
     if type(sample) ~= "table" then return nil, "invalid sample" end
@@ -520,21 +613,25 @@ local function parse_key(key)
     swing = parts[3] ~= "-" and parts[3] or nil, temp = tonumber(parts[4]) }
 end
 
-local function from_codebook(c, codebook)
-  local learner, err = new({ constraints = c })
+local function from_codebook(c, codebook, opts)
+  if opts ~= nil and type(opts) ~= "table" then return nil, "invalid options" end
+  local learner, err = new({ constraints = c, budget_sec = opts and opts.budget_sec })
   if not learner then return nil, err end
   if type(codebook) ~= "table" then return nil, "invalid codebook" end
+  local work = work_control.new(learner.budget_sec)
   for _, key in ipairs(util.keys_sorted(codebook)) do
     local state = parse_key(key)
     if not state then return nil, "invalid codebook key" end
     local ok, serr = add_sample(learner, state, codebook[key])
     if not ok then return nil, serr end
+    -- Retain every raw state even after the analysis deadline.
+    work:step(#learner.samples[#learner.samples].sig.timings_us, true)
   end
-  local model, report = learner:analyze()
+  local model, report = run_analysis(learner, nil, work)
   if not model or report.status == "raw-only" then learner.raw_only.protocol = "codebook retained without promotion" end
   return learner
 end
-function M.from_codebook(c, codebook) return protect(from_codebook, c, codebook) end
+function M.from_codebook(c, codebook, opts) return protect(from_codebook, c, codebook, opts) end
 
 local function distance(a, b)
   local value = math.abs((a.temp or 24) - (b.temp or 24))
@@ -548,18 +645,28 @@ local function decode_record(rec)
   return protect(native.decode, rec.z, rec.carrier)
 end
 
+local function matches_state(input, target)
+  if type(input) ~= "table" or (input.power or "on") ~= target.power then return false end
+  for _, name in ipairs(FLAGS) do
+    local value = input[name]
+    if value == nil then value = DEFAULT_FLAGS[name] end
+    if value ~= target[name] then return false end
+  end
+  if target.power == "off" then return true end
+  return input.mode == target.mode and input.fan == target.fan and input.swing == target.swing and input.temp == target.temp
+end
+
 local function learner_raw(exported, state)
   if type(exported) ~= "table" or type(exported.samples) ~= "table" then return nil end
   local c = constraints(exported.constraints)
   if not c then return nil end
   local target = protect(normalize, state, c)
   if not target then return nil end
-  local label = util.json_canonical(target)
   for i = #exported.samples, 1, -1 do
     local sample = exported.samples[i]
-    if type(sample) == "table" then
-      local s = protect(normalize, sample.state, c)
-      if s and util.json_canonical(s) == label then
+    if type(sample) == "table" and matches_state(sample.state, target) then
+      local normalized = protect(normalize, sample.state, c)
+      if normalized then
         local sig = protect(canonical_copy, sample.sig)
         if sig then return sig end
       end
@@ -577,7 +684,7 @@ local function hybrid(model, base, target)
   if not parts or #parts ~= #model.frames then return nil end
   local frames = {}
   for f, part in ipairs(parts) do
-    local decoded = symbols.decode_frame(part.timings_us, model.frames[f].params)
+    local decoded = symbols.decode_frame(part.timings_us, model.frames[f].params, nil, true)
     if not decoded then return nil end
     frames[f] = decoded
   end
@@ -599,42 +706,45 @@ local function resolve(acdef, state)
   if not c then if raw then return raw, "raw" end; return nil, err end
   local target, serr = normalize(state, c)
   if not target then if raw then return raw, "raw" end; return nil, serr end
-  local bases = {}
+  if not model or not model.checksum_verified or target.power ~= "on"
+    or type(model.toggles) ~= "table" or #model.toggles > 0
+    or type(model.frames) ~= "table" or type(model.fields) ~= "table" then
+    if raw then return raw, "raw" end
+    return nil, "no code for state"
+  end
+  -- Evaluate target field support once; discard incompatible bases before any
+  -- signal decode. Select the nearest base in one pass, sorting only on failure.
+  local unsupported = {}
+  for _, name in ipairs(fields.NAMES) do if not fields.patch(model.fields[name], target[name]) then unsupported[#unsupported + 1] = name end end
+  local bases, best = {}, nil
+  local function add_base(s, sig, rec)
+    if not s or s.power ~= "on" then return end
+    for _, name in ipairs(unsupported) do if s[name] ~= target[name] then return end end
+    local base = { state = s, sig = sig, rec = rec, distance = distance(s, target) }
+    bases[#bases + 1] = base
+    if not best or base.distance < best.distance then best = base end
+  end
   if type(acdef.learner) == "table" and type(acdef.learner.samples) == "table" then
     for _, sample in ipairs(acdef.learner.samples) do
-      if type(sample) == "table" then
-        local s = protect(normalize, sample.state, c)
-        if s then bases[#bases + 1] = { state = s, sig = sample.sig } end
-      end
+      if type(sample) == "table" then add_base(protect(normalize, sample.state, c), sample.sig) end
     end
   end
-  for _, key in ipairs(util.keys_sorted(codebook)) do
+  for key, rec in pairs(codebook) do
     local s = parse_key(key)
-    local rec = codebook[key]
-    if s and type(rec) == "table" and type(rec.z) == "string" then
-      local normalized = normalize(s, c)
-      if normalized then bases[#bases + 1] = { state = normalized, rec = rec } end
-    end
+    if s and type(rec) == "table" and type(rec.z) == "string" then add_base(protect(normalize, s, c), nil, rec) end
   end
-  table.sort(bases, function(a, b) return distance(a.state, target) < distance(b.state, target) end)
-  if model and model.checksum_verified and target.power == "on" and type(model.toggles) == "table" and #model.toggles == 0 then
+  if best then
+    local result = protect(hybrid, model, best, target)
+    if result then return result, "hybrid" end
+    table.sort(bases, function(a, b) return a.distance < b.distance end)
     for _, base in ipairs(bases) do
-      if base.state.power == "on" then
-        -- An invalid/obsolete analysis model must never interrupt the raw tier.
-        local result = protect(hybrid, model, base, target)
+      if base ~= best then
+        result = protect(hybrid, model, base, target)
         if result then return result, "hybrid" end
       end
     end
   end
   if raw then return raw, "raw" end
-  -- Learner captures are also raw evidence, including off and same-label toggles.
-  for i = #bases, 1, -1 do
-    local base = bases[i]
-    if base.sig and util.json_canonical(base.state) == util.json_canonical(target) then
-      local sig = protect(canonical_copy, base.sig)
-      if sig then return sig, "raw" end
-    end
-  end
   return nil, "no code for state"
 end
 function M.resolve(acdef, state)

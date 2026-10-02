@@ -1,6 +1,7 @@
 -- Infer only from labeled, single-variable differences. Positions are 1-based
 -- across the concatenated wire-order frames; linear positions are LSB first.
 local M = {}
+local NIL_VALUE = {}
 M.NAMES = { "temp", "mode", "fan", "swing", "turbo", "eco", "sleep", "display" }
 
 function M.key(value)
@@ -15,14 +16,49 @@ function M.same_except(a, b, name)
   return true
 end
 
-local function isolated_changes(samples, name, excluded)
-  local positions, pairs_found = {}, 0
-  for i = 1, #samples do
-    for j = i + 1, #samples do
-      local a, b = samples[i], samples[j]
-      if a.state[name] ~= b.state[name] and M.same_except(a.state, b.state, name) then
-        pairs_found = pairs_found + 1
-        for p, bit in ipairs(a.bits) do if bit ~= b.bits[p] and not excluded[tostring(p)] then positions[p] = true end end
+-- Typed, length-delimited labels replace canonical JSON in analysis loops.
+function M.signature(state, except)
+  local out = {}
+  local function add(value)
+    local kind = type(value)
+    if kind == "nil" then out[#out + 1] = "-"
+    elseif kind == "boolean" then out[#out + 1] = value and "t" or "f"
+    elseif kind == "number" then
+      local integer = math.tointeger(value)
+      out[#out + 1] = "n" .. (integer and tostring(integer) or string.format("%.17g", value)) .. ";"
+    elseif kind == "string" then out[#out + 1] = #value .. ":" .. value
+    else error("invalid state label") end
+  end
+  add(state.power)
+  for _, name in ipairs(M.NAMES) do if name ~= except then add(state[name]) end end
+  return table.concat(out)
+end
+
+local function isolated_changes(samples, name, excluded, work)
+  local groups, positions, pairs_found = {}, {}, 0
+  for _, s in ipairs(samples) do
+    local label = M.signature(s.state, name)
+    local group = groups[label]
+    if not group then group = { samples = {}, counts = {} }; groups[label] = group end
+    local key = s.state[name]
+    if key == nil then key = NIL_VALUE end
+    local count = group.counts[key] or 0
+    pairs_found = pairs_found + #group.samples - count
+    group.counts[key] = count + 1
+    group.samples[#group.samples + 1] = s
+    if work and not work:step(#M.NAMES) then return nil, "budget" end
+  end
+  for _, group in pairs(groups) do
+    -- In a group with two labels, every differing bit participates in at least
+    -- one cross-label pair. Compare to one representative instead of all pairs.
+    if next(group.counts, next(group.counts)) ~= nil then
+      local first = group.samples[1].bits
+      for i = 2, #group.samples do
+        local bits = group.samples[i].bits
+        for p, bit in ipairs(first) do
+          if bit ~= bits[p] and not excluded[p] then positions[p] = true end
+        end
+        if work and not work:step(#first) then return nil, "budget" end
       end
     end
   end
@@ -52,100 +88,94 @@ local function orders(start, width)
   return out
 end
 
-local function infer_temp(samples, constraints, excluded, occupied)
-  local changed, pairs_found = isolated_changes(samples, "temp", excluded)
+local function infer_temp(samples, constraints, excluded, occupied, work)
+  local changed, pairs_found = isolated_changes(samples, "temp", excluded, work)
+  if not changed then return nil, pairs_found end
   local temps, count = {}, 0
   for _, s in ipairs(samples) do
-    if not temps[tostring(s.state.temp)] then temps[tostring(s.state.temp)] = true; count = count + 1 end
+    if not temps[s.state.temp] then temps[s.state.temp] = true; count = count + 1 end
   end
   if count < 3 or pairs_found < 2 then return nil, "need independent temperature anchors" end
+  if next(changed) == nil then return { kind = "ignored", positions = {} } end
   local second
   for i = 2, #samples do if samples[i].state.temp ~= samples[1].state.temp then second = samples[i]; break end end
   if not second then return nil, "temperature constant" end
-  local candidates = {}
+  local regions, covered, remaining = {}, {}, 0
+  for _ in pairs(changed) do remaining = remaining + 1 end
+  -- The old selection sorted by width/start/order. Accept the first fitting
+  -- window immediately, retaining every fitting order for that same window.
+  -- Later overlapping windows could never be selected; do not evaluate them.
   for width = 1, math.min(12, #samples[1].bits) do
     for start = 1, #samples[1].bits - width + 1 do
+      if work and not work:step(width) then return nil, "budget" end
       local valid, relevant = true, false
       for p = start, start + width - 1 do
-        if excluded[tostring(p)] or occupied[tostring(p)] then valid = false; break end
+        if covered[p] or excluded[p] or occupied[p] then valid = false; break end
         if changed[p] then relevant = true end
       end
       if valid and relevant then
+        local fits_here = {}
         for _, positions in ipairs(orders(start, width)) do
           local v1, v2 = value_at(samples[1].bits, positions), value_at(second.bits, positions)
-          local a = (v2 - v1) / (second.state.temp - samples[1].state.temp)
-          local b, fits = v1 - a * samples[1].state.temp, a ~= 0
-          for _, s in ipairs(samples) do
-            if math.abs(value_at(s.bits, positions) - (a * s.state.temp + b)) > 0.000001 then fits = false; break end
+          local slope = (v2 - v1) / (second.state.temp - samples[1].state.temp)
+          local intercept, fits = v1 - slope * samples[1].state.temp, slope ~= 0
+          if fits then
+            for _, s in ipairs(samples) do
+              if work and not work:step(width) then return nil, "budget" end
+              if math.abs(value_at(s.bits, positions) - (slope * s.state.temp + intercept)) > 0.000001 then fits = false; break end
+            end
           end
           if fits then
             local minimum, maximum, step = constraints.min_temp, constraints.max_temp, constraints.step
             for k = 0, math.floor((maximum - minimum) / step + 0.000001) do
-              local value = a * (minimum + k * step) + b
-              if value < -0.000001 or value > (1 << width) - 1 + 0.000001 or math.abs(value - math.floor(value + 0.5)) > 0.000001 then fits = false; break end
+              local value = slope * (minimum + k * step) + intercept
+              if value < -0.000001 or value > (1 << width) - 1 + 0.000001
+                or math.abs(value - math.floor(value + 0.5)) > 0.000001 then fits = false; break end
             end
           end
-          if fits then candidates[#candidates + 1] = { positions = positions, a = a, b = b, width = width } end
+          if fits then fits_here[#fits_here + 1] = { positions = positions, a = slope, b = intercept } end
         end
-      end
-    end
-  end
-  local regions, covered = {}, {}
-  for _, candidate in ipairs(candidates) do
-    local relevant, overlaps = false, false
-    for _, p in ipairs(candidate.positions) do
-      if covered[p] then overlaps = true end
-      if changed[p] and not covered[p] then relevant = true end
-    end
-    if relevant and not overlaps then
-      local alternatives = {}
-      for _, other in ipairs(candidates) do
-        if other.width == candidate.width then
-          local same = true
-          for _, p in ipairs(other.positions) do
-            local found = false; for _, q in ipairs(candidate.positions) do if p == q then found = true; break end end
-            if not found then same = false; break end
+        if #fits_here > 0 then
+          local primary = fits_here[1]
+          regions[#regions + 1] = { positions = primary.positions, a = primary.a, b = primary.b, alternatives = fits_here }
+          for _, p in ipairs(primary.positions) do
+            covered[p], occupied[p] = true, true
+            if changed[p] then remaining = remaining - 1 end
           end
-          if same then alternatives[#alternatives + 1] = other end
+          if remaining == 0 then return { kind = "linear", regions = regions, evidence = count } end
         end
       end
-      -- Alternatives above are distinct plain tables; avoid a self-reference.
-      local primary = { positions = candidate.positions, a = candidate.a, b = candidate.b, alternatives = {} }
-      for _, alt in ipairs(alternatives) do primary.alternatives[#primary.alternatives + 1] = { positions = alt.positions, a = alt.a, b = alt.b } end
-      regions[#regions + 1] = primary
-      for _, p in ipairs(candidate.positions) do covered[p] = true; occupied[tostring(p)] = true end
     end
   end
-  for p in pairs(changed) do if not covered[p] then return nil, "temperature changes not linear" end end
-  if #regions == 0 then
-    -- A temperature ignored by the protocol needs multiple isolated anchors too.
-    if next(changed) == nil then return { kind = "ignored", positions = {} } end
-    return nil, "no temperature range"
-  end
-  return { kind = "linear", regions = regions, evidence = count }
+  return nil, "temperature changes not linear"
 end
 
-function M.infer(samples, constraints, excluded)
+function M.infer(samples, constraints, excluded, work)
   if type(samples) ~= "table" or #samples == 0 or type(constraints) ~= "table" then return nil, "invalid samples" end
-  excluded = excluded or {}
+  local excluded_bits = {}
+  for p, value in pairs(excluded or {}) do excluded_bits[tonumber(p) or p] = value end
+  excluded = excluded_bits
   local result, occupied, report = {}, {}, { unknown = {}, confounded = {} }
   if constraints.min_temp == constraints.max_temp then
     result.temp = { kind = "fixed", value = constraints.min_temp, positions = {} }
   else
     local temp_occupied = {}
-    local field, reason = infer_temp(samples, constraints, excluded, temp_occupied)
+    local field, reason = infer_temp(samples, constraints, excluded, temp_occupied, work)
+    if reason == "budget" then return nil, reason end
     if field then occupied = temp_occupied end
     result.temp = field
     if not field then report.unknown.temp = reason end
   end
   for _, name in ipairs(M.NAMES) do
     if name ~= "temp" then
-      local changed, independent = isolated_changes(samples, name, excluded)
+      local changed, independent = isolated_changes(samples, name, excluded, work)
+      if not changed then return nil, independent end
       local positions, values, seen = {}, {}, {}
       for _, s in ipairs(samples) do seen[M.key(s.state[name])] = true end
       local category_count = 0; for _ in pairs(seen) do category_count = category_count + 1 end
       for p in pairs(changed) do
-        if not occupied[tostring(p)] then
+        if work and not work:step(#samples) then return nil, "budget" end
+        if not occupied[p] then
           local by_value, predictive = {}, true
           for _, s in ipairs(samples) do
             local key = M.key(s.state[name])
@@ -167,7 +197,7 @@ function M.infer(samples, constraints, excluded)
           values[M.key(s.state[name])] = a
         end
         result[name] = { kind = "table", positions = positions, values = values, evidence = category_count }
-        for _, p in ipairs(positions) do occupied[tostring(p)] = true end
+        for _, p in ipairs(positions) do occupied[p] = true end
       else report.unknown[name] = "need an independent change"; report.confounded[#report.confounded + 1] = name end
     end
   end

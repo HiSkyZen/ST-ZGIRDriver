@@ -117,6 +117,23 @@ local function learn(t, kind)
   return learner, model, unseen
 end
 
+-- Resolution/persistence cases need one analyzed fixture, not another guided
+-- session. Guided request convergence and jitter remain covered for all families.
+local function fixture()
+  local learner = assert(ac.new({ constraints = C }))
+  local labels = { { power = "off" }, state(), state(25), state(16), state(30),
+    state(24, "heat"), state(24, "cool", "low"), state(24, "cool", "high"), state(24, "cool", "auto", "on") }
+  for _, name in ipairs({ "turbo", "eco", "sleep", "display" }) do
+    local s = state(); s[name] = not s[name]; labels[#labels + 1] = s
+  end
+  for i, s in ipairs(labels) do assert(learner:add_sample(s, capture(s, "byte", true, i * 17))) end
+  local model = assert(learner:analyze())
+  local unseen = state(23, "heat", "high", "on")
+  unseen.turbo, unseen.eco, unseen.sleep, unseen.display = true, true, true, false
+  assert(ac.encode(model, unseen))
+  return learner, model, unseen
+end
+
 return { name = "analysis", cases = {
   { "single-frame byte sum with jitter", function(t) learn(t, "byte") end },
   { "LG 28-bit nibble sum with jitter", function(t)
@@ -143,7 +160,7 @@ return { name = "analysis", cases = {
   end },
   { "pulse-width symbols", function(t) learn(t, "width") end },
   { "parametric hybrid raw and missing resolution", function(t)
-    local learner, model, unseen = learn(t, "byte")
+    local learner, model, unseen = fixture()
     local off = { power = "off" }
     local offz = assert(native.encode(capture(off, "byte")))
     local def = { constraints = C, model = model, learner = learner:export(), codebook = { off = { z = offz, carrier = 38000 } } }
@@ -191,6 +208,86 @@ return { name = "analysis", cases = {
     local resolved, tier = ac.resolve({ model = m, constraints = C, learner = raw:export(), codebook = compact }, state(24))
     t.ok(resolved); t.eq(tier, "raw")
   end },
+  { "budget returns gracefully and preserves every raw state", function(t)
+    local book, compact = {}, {}
+    for _, temp in ipairs({ 16, 24, 25, 30 }) do
+      local s = state(temp); local key = ac.state_key(s)
+      book[key] = capture(s, "byte")
+      compact[key] = { z = assert(native.encode(book[key])), carrier = 38000 }
+    end
+    local learner = assert(ac.from_codebook(C, book, { budget_sec = 0 }))
+    local model, report = learner:analyze()
+    t.eq(model, nil); t.eq(report.reason, "budget"); t.eq(#learner.samples, 4)
+    local sig, tier = ac.resolve({ constraints = C, model = model, learner = learner:export(), codebook = compact }, state(24))
+    t.ok(sig); t.eq(tier, "raw")
+    sig, tier = ac.resolve({ constraints = C, learner = learner:export() }, state(25))
+    t.ok(sig); t.eq(tier, "raw", "learner evidence survives without a codebook")
+    model, report = learner:analyze(20)
+    t.ok(model); t.ok(report.reason ~= "budget", "larger per-call budget can resume")
+    local fresh = assert(ac.new({ constraints = C }))
+    t.ok(fresh:add_sample(state(), capture(state(), "byte")))
+    model, report = fresh:analyze({ budget_sec = 0 })
+    t.eq(model, nil); t.eq(report.reason, "budget")
+    t.eq(ac.new({ budget_sec = -1 }), nil)
+    -- Deterministically cross the deadline inside a checkpoint, without waiting
+    -- for the hub clock tick. Restore the clock/hook before any assertions.
+    local interrupted = assert(ac.new({ constraints = C }))
+    for i = 1, 30 do local s = state(16 + (i - 1) % 15); assert(interrupted:add_sample(s, capture(s, "gree"))) end
+    local real_time, now = os.time, os.time()
+    os.time = function() return now end
+    ac.set_yield(function() now = now + 1 end)
+    local safe, stopped, stopped_report = pcall(function() return interrupted:analyze(0.25) end)
+    os.time = real_time; ac.set_yield(nil)
+    t.ok(safe); t.eq(stopped, nil); t.eq(stopped_report.reason, "budget")
+    t.ok(stopped_report.work_units >= 2048 and stopped_report.yield_count == 1)
+    sig, tier = ac.resolve({ constraints = C, learner = interrupted:export() }, state(24))
+    t.ok(sig); t.eq(tier, "raw")
+  end },
+  { "cooperative yield and cached analysis keep fast paths pure", function(t)
+    local learner, calls = assert(ac.new({ constraints = C })), 0
+    for i = 1, 30 do
+      local s = state(16 + (i - 1) % 15)
+      t.ok(learner:add_sample(s, capture(s, "gree", true, i * 17)))
+    end
+    t.ok(ac.set_yield(function() calls = calls + 1 end))
+    -- Always restore the module hook, even if an assertion fails.
+    local ok, err = pcall(function()
+      local model, report = learner:analyze()
+      t.ok(model); t.ok(calls > 0, "non-trivial analyze yields")
+      t.eq(report.yield_count, calls)
+      local before = calls
+      local same = learner:analyze(); t.eq(same, model, "same evidence reuses model")
+      t.eq(calls, before, "cached analyze performs no long loops")
+      t.ok(ac.encode(model, state(23)))
+      t.ok(ac.resolve({ constraints = C, model = model, learner = learner:export() }, state(23)))
+      t.eq(calls, before, "encode and resolve never yield")
+      local exported = learner:export()
+      t.eq(exported._cache, nil); t.eq(exported._params, nil, "runtime caches are not persisted")
+      local params, decoded_bits = learner._params[1], learner._cache[learner.samples[1]].frames[1].bits
+      t.ok(learner:add_sample(state(20), capture(state(20), "gree", true, 301)))
+      local updated = assert(learner:analyze()); t.ok(updated ~= model, "new sample invalidates analysis")
+      t.eq(learner._params[1], params, "compatible timings reuse parameters")
+      t.eq(learner._cache[learner.samples[1]].frames[1].bits, decoded_bits, "old bit frames are not decoded again")
+      t.ok(calls > before)
+    end)
+    ac.set_yield(nil)
+    if not ok then error(err) end
+    t.eq(ac.set_yield(false), nil)
+    local changed = assert(ac.new({ constraints = C }))
+    for _, temp in ipairs({ 24, 25, 30 }) do assert(changed:add_sample(state(temp), capture(state(temp), "byte"))) end
+    assert(changed:analyze())
+    local old_params = changed._params[1]
+    local old_bits = changed._cache[changed.samples[1]].frames[1].bits
+    for _, temp in ipairs({ 24, 25, 30 }) do
+      local shifted = capture(state(temp), "byte")
+      for i, value in ipairs(shifted.timings_us) do shifted.timings_us[i] = math.min(65535, math.floor(value * 1.6 + 0.5)) end
+      assert(changed:add_sample(state(temp), shifted))
+    end
+    t.ok(changed:analyze())
+    t.ok(changed._params[1] ~= old_params, "incompatible timings relearn parameters")
+    t.ok(changed._cache[changed.samples[1]].frames[1].bits ~= old_bits, "new parameters invalidate decoded frames")
+    t.same(changed._cache[changed.samples[1]].frames[1].bits, protocol(state(24), "byte")[1])
+  end },
   { "confounded temperature requests an independent anchor", function(t)
     local learner = assert(ac.new({ constraints = C }))
     t.ok(learner:add_sample({ power = "off" }, capture({ power = "off" }, "byte")))
@@ -201,7 +298,7 @@ return { name = "analysis", cases = {
     t.same(req.state, state(25), "seen but confounded temperature must be isolated")
   end },
   { "export load and malformed input", function(t)
-    local learner, model, unseen = learn(t, "byte")
+    local learner, model, unseen = fixture()
     local exported = learner:export(); t.ok(util.json_canonical(exported))
     local loaded = assert(ac.load(exported)); local roundtrip = assert(loaded:analyze())
     t.same(ac.encode(roundtrip, unseen), ac.encode(model, unseen))
@@ -282,5 +379,15 @@ return { name = "analysis", cases = {
       { repeat_timings_us = { 9000, 2250, 500 }, repeat_count = 2 })
     parts = assert(timings.split(short)); t.eq(#parts, 3); t.eq(#parts[2].timings_us, 3)
     local clusters = assert(timings.cluster({ 375, 500, 625, 1125, 1500, 1875 })); t.eq(#clusters, 2)
+    local params = assert(symbols.learn({ parts[1] }))
+    local views = assert(symbols.decode_frame(parts[1].timings_us, params))
+    t.same(views.bytes_lsb, symbols.to_bytes(views.bits, "lsb"))
+    t.same(views.bytes_msb, symbols.to_bytes(views.bits, "msb"))
+    local manchester = { encoding = "manchester", header = { 9000, 4500 }, footer = {}, unit_us = 500, bit_count = 4 }
+    local bits = { 1, 0, 1, 1 }
+    local emitted = assert(symbols.encode_bits(manchester, bits))
+    t.same(assert(symbols.decode_frame(emitted, manchester)).bits, bits)
+    local literal = { encoding = "literal", header = { 9000, 2250, 500 }, footer = {}, bit_count = 0 }
+    t.same(assert(symbols.decode_frame(literal.header, literal)).bits, {})
   end },
 } }

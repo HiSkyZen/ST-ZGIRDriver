@@ -44,24 +44,25 @@ local function payload(list, p)
   if #list < h + f then return nil, "short frame" end
   for i, v in ipairs(p.header) do if not close(list[i], v) then return nil, "header mismatch" end end
   for i, v in ipairs(p.footer) do if not close(list[#list - f + i], v) then return nil, "footer mismatch" end end
-  local out = {}
-  for i = h + 1, #list - f do out[#out + 1] = list[i] end
-  return out
+  return list, h + 1, #list - f
 end
 
-function M.decode_frame(list, p)
-  local data, err = payload(list, p)
-  if not data then return nil, err end
+function M.decode_frame(list, p, work, wire_only)
+  local data, start, finish = payload(list, p)
+  if not data then return nil, start end
+  local count = finish - start + 1
   local bits = {}
   if p.encoding == "literal" then
-    if #data ~= 0 then return nil, "literal frame mismatch" end
+    if count ~= 0 then return nil, "literal frame mismatch" end
   elseif p.encoding == "manchester" then
     if type(p.unit_us) ~= "number" or p.unit_us <= 0 then return nil, "invalid Manchester unit" end
     local halves = {}
-    for i, v in ipairs(data) do
+    for i = start, finish do
+      if work and (i - start) % 512 == 0 and not work:step(math.min(512, finish - i + 1)) then return nil, "budget" end
+      local v = data[i]
       local n = math.floor(v / p.unit_us + 0.5)
       if (n ~= 1 and n ~= 2) or not close(v, n * p.unit_us) then return nil, "invalid Manchester run" end
-      for _ = 1, n do halves[#halves + 1] = i % 2 end
+      for _ = 1, n do halves[#halves + 1] = (i - start + 1) % 2 end
     end
     if #halves % 2 ~= 0 then return nil, "incomplete Manchester symbol" end
     for i = 1, #halves, 2 do
@@ -70,8 +71,9 @@ function M.decode_frame(list, p)
     end
   else
     if p.encoding ~= "pulse_distance" and p.encoding ~= "pulse_width" then return nil, "unknown encoding" end
-    if #data % 2 ~= 0 or type(p.zero) ~= "table" or type(p.one) ~= "table" then return nil, "invalid pulse pairs" end
-    for i = 1, #data, 2 do
+    if count % 2 ~= 0 or type(p.zero) ~= "table" or type(p.one) ~= "table" then return nil, "invalid pulse pairs" end
+    for i = start, finish, 2 do
+      if work and (i - start) % 512 == 0 and not work:step(math.min(512, finish - i + 1)) then return nil, "budget" end
       local best, distance
       for bit = 0, 1 do
         local s = bit == 0 and p.zero or p.one
@@ -87,10 +89,11 @@ function M.decode_frame(list, p)
     end
   end
   if #bits ~= p.bit_count then return nil, "bit count mismatch" end
+  if wire_only then return { bits = bits } end
   return { bits = bits, bytes_lsb = M.to_bytes(bits, "lsb"), bytes_msb = M.to_bytes(bits, "msb") }
 end
 
-local function learn_impl(frames)
+local function learn_impl(frames, work, defer_decode)
   if type(frames) ~= "table" or #frames == 0 then return nil, "no frames" end
   local lists = {}
   for i, frame in ipairs(frames) do
@@ -99,9 +102,13 @@ local function learn_impl(frames)
     for _, v in ipairs(a) do if type(v) ~= "number" or v <= 0 then return nil, "invalid timing" end end
     if i > 1 and #a ~= #lists[1] then return nil, "frame length changes" end
     lists[i] = a
+    if work and not work:step(#a) then return nil, "budget" end
   end
   local first, marks = lists[1], {}
-  for _, a in ipairs(lists) do for i = 3, #a - 1, 2 do marks[#marks + 1] = a[i] end end
+  for _, a in ipairs(lists) do
+    for i = 3, #a - 1, 2 do marks[#marks + 1] = a[i] end
+    if work and not work:step(#a) then return nil, "budget" end
+  end
   local mark = timings.median(marks) or first[1]
   local h = first[1] > mark * 2 and 2 or 0
   local f = #first % 2
@@ -115,6 +122,7 @@ local function learn_impl(frames)
   local mv, sv = {}, {}
   for _, a in ipairs(lists) do
     for i = h + 1, #a - f, 2 do mv[#mv + 1], sv[#sv + 1] = a[i], a[i + 1] end
+    if work and not work:step(#a) then return nil, "budget" end
   end
   local mc, sc = timings.cluster(mv), timings.cluster(sv)
   if #mc == 1 and #sc == 2 then
@@ -128,7 +136,10 @@ local function learn_impl(frames)
     -- every half-pair transitions, and all samples have the same decoded length.
     for _, footer in ipairs({ 0, f }) do
       local durations = {}
-      for _, a in ipairs(lists) do for i = h + 1, #a - footer do durations[#durations + 1] = a[i] end end
+      for _, a in ipairs(lists) do
+        for i = h + 1, #a - footer do durations[#durations + 1] = a[i] end
+        if work and not work:step(#a) then return nil, "budget" end
+      end
       local clusters = timings.cluster(durations)
       if #clusters >= 1 and #clusters <= 2 then
         local candidate = { encoding = "manchester", header = p.header, footer = {}, unit_us = clusters[1].center }
@@ -140,24 +151,39 @@ local function learn_impl(frames)
           candidate.bit_count = halves // 2
           if count and count ~= candidate.bit_count then valid = false; break end
           count = candidate.bit_count
-          if not M.decode_frame(a, candidate) then valid = false; break end
+          local decoded, err = M.decode_frame(a, candidate, work, true)
+          if err == "budget" then return nil, err end
+          if not decoded then valid = false; break end
         end
         if valid and count and count >= 4 then return candidate end
       end
     end
     -- Unchanging short/preamble frames can be preserved without inventing bits.
+    local centers = {}
+    for i = 1, #first do
+      centers[i] = med_at(i)
+      if work and not work:step(#lists) then return nil, "budget" end
+    end
     for _, a in ipairs(lists) do
-      for i, v in ipairs(a) do if not close(v, med_at(i)) then return nil, "unsupported symbol encoding" end end
+      for i, v in ipairs(a) do if not close(v, centers[i]) then return nil, "unsupported symbol encoding" end end
+      if work and not work:step(#a) then return nil, "budget" end
     end
     p = { encoding = "literal", header = {}, footer = {}, bit_count = 0 }
-    for i = 1, #first do p.header[i] = med_at(i) end
+    for i = 1, #first do p.header[i] = centers[i] end
   end
-  for _, a in ipairs(lists) do if not M.decode_frame(a, p) then return nil, "inconsistent symbols" end end
+  -- The learner immediately decodes every sample against these parameters;
+  -- standalone callers still get full symbol validation before learn returns.
+  if not defer_decode then
+    for _, a in ipairs(lists) do
+      local decoded, err = M.decode_frame(a, p, work, true)
+      if not decoded then return nil, err end
+    end
+  end
   return p
 end
 
-function M.learn(frames)
-  local ok, value, err = pcall(learn_impl, frames)
+function M.learn(frames, work, defer_decode)
+  local ok, value, err = pcall(learn_impl, frames, work, defer_decode)
   if not ok then return nil, "invalid frames" end
   return value, err
 end

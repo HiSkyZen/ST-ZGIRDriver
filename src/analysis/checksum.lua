@@ -1,5 +1,6 @@
 -- Checksum hypotheses are data. Generation refuses disagreement between them.
 local M = {}
+local VALUE_CACHE_MT = { __mode = "k" }
 
 local function read(bits, start, width, order)
   local value = 0
@@ -57,20 +58,25 @@ function M.apply(check, bits)
   if type(check) ~= "table" or type(bits) ~= "table" then return nil, "invalid checksum" end
   if check.kind == "constant" then return true end
   if not check.verified or type(check.candidates) ~= "table" or #check.candidates == 0 then return nil, "checksum unverified" end
-  local predicted
+  local predicted, start, width
   for _, rule in ipairs(check.candidates) do
-    local value, err = M.predicted_bits(rule, bits)
-    if not value then return nil, err end
-    if predicted then
-      for i, b in ipairs(value) do if b ~= predicted[i] then return nil, "checksum ambiguous" end end
-    else predicted = value end
+    local value, err = M.value(rule, bits)
+    if value == nil then return nil, err end
+    if rule.output_order == "msb" then
+      local reversed = 0
+      for i = 0, rule.width - 1 do reversed = (reversed << 1) | ((value >> i) & 1) end
+      value = reversed
+    end
+    if predicted ~= nil then
+      if start ~= rule.out_start or width ~= rule.width then return nil, "invalid checksum candidates" end
+      if value ~= predicted then return nil, "checksum ambiguous" end
+    else predicted, start, width = value, rule.out_start, rule.width end
   end
-  local start = check.candidates[1].out_start
-  for i, bit in ipairs(predicted) do bits[start + i - 1] = bit end
+  for i = 0, width - 1 do bits[start + i] = (predicted >> i) & 1 end
   return true
 end
 
-local function infer_impl(samples)
+local function infer_impl(samples, work)
   if type(samples) ~= "table" or #samples == 0 then return nil, "no checksum samples" end
   local first = samples[1].bits or samples[1]
   if type(first) ~= "table" then return nil, "invalid bits" end
@@ -78,8 +84,11 @@ local function infer_impl(samples)
   for _, sample in ipairs(samples) do
     local bits = sample.bits or sample
     if type(bits) ~= "table" or #bits ~= n then return nil, "checksum length mismatch" end
-    local key = table.concat(bits)
-    if not unique[key] then unique[key] = true; values = values + 1 end
+    if values < 3 then
+      local key = table.concat(bits)
+      if not unique[key] then unique[key] = true; values = values + 1 end
+    end
+    if work and not work:step(n) then return nil, "budget" end
   end
   if values == 1 then return { kind = "constant", verified = true, candidates = {} } end
   if values < 3 then return { verified = false, candidates = {}, reason = "need three payloads" } end
@@ -104,6 +113,7 @@ local function infer_impl(samples)
                     local valid, seen = true, {}
                     for _, sample in ipairs(samples) do
                       local bits = sample.bits or sample
+                      if work and not work:step(n) then return nil, "budget" end
                       local actual = read(bits, start, width, output)
                       if M.value(rule, bits) ~= actual then valid = false; break end
                       seen[tostring(actual)] = true
@@ -123,19 +133,20 @@ local function infer_impl(samples)
   return { verified = false, candidates = {}, reason = "no validated checksum" }
 end
 
-function M.infer(samples)
-  local ok, value, err = pcall(infer_impl, samples)
+function M.infer(samples, work)
+  local ok, value, err = pcall(infer_impl, samples, work)
   if not ok then return nil, "invalid checksum samples" end
   return value, err
 end
 
 -- Confirm hypotheses from a representative study against the complete codebook.
-function M.validate(check, samples)
+function M.validate(check, samples, work)
   if type(check) ~= "table" or type(samples) ~= "table" or #samples == 0 then return nil, "invalid checksum evidence" end
   if check.kind == "constant" then
     local first = samples[1].bits or samples[1]
     for _, sample in ipairs(samples) do
       local bits = sample.bits or sample
+      if work and not work:step(#bits) then return nil, "budget" end
       if #bits ~= #first then return { verified = false, candidates = {}, reason = "frame changed" } end
       for i, bit in ipairs(bits) do
         if bit ~= first[i] then return { verified = false, candidates = {}, reason = "frame changed" } end
@@ -148,7 +159,16 @@ function M.validate(check, samples)
     local valid = true
     for _, sample in ipairs(samples) do
       local bits = sample.bits or sample
-      if M.value(rule, bits) ~= read(bits, rule.out_start, rule.width, rule.output_order) then valid = false; break end
+      if work and not work:step(#bits) then return nil, "budget" end
+      local value
+      -- Work-tagged frames belong to the learner decode cache and are immutable
+      -- until their timing parameters change. Public bit-array calls stay uncached.
+      if work and sample.bits then
+        sample.check_values = sample.check_values or setmetatable({}, VALUE_CACHE_MT)
+        value = sample.check_values[rule]
+        if value == nil then value = M.value(rule, bits); sample.check_values[rule] = value end
+      else value = M.value(rule, bits) end
+      if value ~= read(bits, rule.out_start, rule.width, rule.output_order) then valid = false; break end
     end
     if valid then candidates[#candidates + 1] = rule end
   end

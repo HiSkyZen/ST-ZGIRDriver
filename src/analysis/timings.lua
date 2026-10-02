@@ -57,7 +57,7 @@ local function checked(sig)
   return signal.flatten(sig)
 end
 
-function M.split(sig, opts)
+function M.split(sig, opts, work)
   opts = type(opts) == "table" and opts or {}
   local ok, list, err = pcall(checked, sig)
   if not ok then return nil, "invalid signal" end
@@ -71,6 +71,7 @@ function M.split(sig, opts)
   if type(threshold) ~= "number" or threshold <= 0 then return nil, "invalid gap threshold" end
   local frames, current = {}, {}
   for i, v in ipairs(list) do
+    if work and i % 512 == 0 and not work:step(512) then return nil, "budget" end
     if i % 2 == 0 and v >= threshold and #current >= 3 then
       frames[#frames + 1] = { timings_us = current, gap_us = math.min(v, 65535) }
       current = {}
