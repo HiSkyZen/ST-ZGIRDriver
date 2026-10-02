@@ -17,13 +17,13 @@ Last updated: 2026-10-02. The driver runs on the user's hub (V3, fw 000.062.0000
 | Import | named lines mixing signed raw / Global Caché / Pronto; SmartIR climate (Raw encoding) → codebook + constraints → promoted to a parametric model in ~1 s on the hub |
 | Remote Pack | export → `STIR1:` share string → import into another child (checksum verified) → keys restored; `tools/export.ps1` writes `.stir` |
 | Persistence | definitions and state survive driver restarts. Values read back from the persistent store must not be mutated in place (data loss observed and fixed with copy-on-read) |
-| Self-tests on the hub | 33 core/transport/import/packs/protocols/devices cases + 15 analysis cases pass |
+| Self-tests on the hub | 38 core/transport/import/packs/protocols/devices cases + 17 analysis cases pass |
+| Independent audit (Astra A1) | 15 findings; 1–14 fixed with regression tests; 15 (`tx_queue.clear` window) has no production caller |
 
 ## Known limits / follow-ups
 
-- **AC analyzer CPU cost on the hub** (W1b, Sol, in progress): full guided sessions take 15–26 s of CPU
-  in total (~1.5–2 s per sample). Analysis is deferred until after the prompt and test transmit; a
-  cooperative yield hook and time budget are being added.
+- AC analyzer CPU cost: resolved in W1b. Full analysis suite 41 s (was ~250 s); guided sessions 3–4 s
+  in total; analysis yields to cosock and is capped by a 20 s budget with raw fallback.
 - AC guided learning with a physical AC remote has not been run yet (no physical AC session so far).
 - Community registry: not implemented (optional in the spec). Sharing works offline through
   `.stir` files and `STIR1:` strings.

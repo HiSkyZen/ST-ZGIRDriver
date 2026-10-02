@@ -146,7 +146,11 @@ L:export() / ac_learner.load(t) -- persistence of samples + model
 ac_learner.encode(model, state) -> sig | nil, err        -- parametric generation
 ac_learner.resolve(acdef, state)-> sig, "parametric"|"hybrid"|"raw" | nil, err
 ac_learner.from_codebook(constraints, codebook) -> learner  -- SmartIR ingestion
+ac_learner.set_yield(fn)        -- cooperative yield hook (driver: cosock.socket.sleep(0))
+-- opts.budget_sec (default 20) bounds analysis; on budget exhaustion analyze returns nil, {reason="budget"}
+-- and raw codebook resolution keeps working.
 ```
+Measured on the hub (V3): guided session tests 3–4 s CPU total, SmartIR promotion test 6 s.
 
 ## Persistence policy
 
