@@ -3,7 +3,7 @@
 -- parametric -> hybrid -> raw codebook by analysis/ac_learner.
 local capabilities = require "st.capabilities"
 local log = require "log"
-local zosung = require "ir.codec_zosung"
+local native = require "ir.native"
 local common = require "devices.common"
 
 local ok_learner, ac_learner = pcall(require, "analysis.ac_learner")
@@ -78,7 +78,7 @@ function M.resolve(def, s)
   if ac_learner and ac_learner.resolve then
     local ok, sig, method = pcall(ac_learner.resolve, ac, s)
     if ok and sig then
-      local code, err = zosung.encode(sig)
+      local code, err = native.encode(sig)
       if code then return code, method, sig.carrier_hz end
       log.warn("[ZGIR] AC encode failed: " .. tostring(err))
     elseif not ok then

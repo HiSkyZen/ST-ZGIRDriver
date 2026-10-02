@@ -12,7 +12,7 @@ local function broadlink_b64(s)
   local bytes = util.b64_decode(s)
   if not bytes or #bytes < 6 or bytes:byte(1) ~= 0x26 then return false end
   local n = bytes:byte(3) | (bytes:byte(4) << 8)
-  return n >= 3 and n <= #bytes - 4
+  return n >= 3 and n <= #bytes -- ZG-IR01 native packets count the header
 end
 
 function M.detect(text)

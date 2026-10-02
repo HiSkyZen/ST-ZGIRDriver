@@ -18,7 +18,7 @@ M.CLUSTER_CONTROL = 0xE004
 M.CLUSTER_TRANSFER = 0xED00
 M.CHUNK_SIZE = 0x38
 M.LEARN_TIMEOUT_SEC = 30
-M.CHUNK_RETRY_SEC = 3
+M.CHUNK_RETRY_SEC = 5 -- the device can take >3 s to answer the first request
 M.CHUNK_RETRIES = 5
 -- Firmware 23062026 requests chunks with seq=0 regardless of the announced
 -- sequence, so every outbound transfer uses seq 0 and transfers are serialized.

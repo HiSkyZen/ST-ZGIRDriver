@@ -10,7 +10,7 @@ local log = require "log"
 local util = require "util"
 local caps = require "caps"
 local store = require "ir.store"
-local zosung = require "ir.codec_zosung"
+local native = require "ir.native"
 local dispatcher = require "children.dispatcher"
 local learning = require "children.learning"
 
@@ -96,7 +96,7 @@ local function analyze_codebook(def)
   if not learner_mod then return end
   local codebook = {}
   for k, rec in pairs(def.ac.codebook) do
-    local sig = zosung.decode(rec.z, rec.carrier)
+    local sig = native.decode(rec.z, rec.carrier)
     if sig then codebook[k] = sig end
   end
   local ok, l = pcall(learner_mod.from_codebook, require("devices.ac").constraints(def), codebook)
@@ -133,8 +133,8 @@ function M.import(driver, child, raw_text)
     local result
     if detect then
       result, err = detect.parse_any(text)
-    elseif zosung.looks_like(text) then
-      result = { format = "zosung", signals = { { sig = zosung.decode(text) } } }
+    elseif native.looks_like(text) then
+      result = { format = "native", signals = { { sig = native.decode(text) } } }
     end
     if not result then return status(child, "형식을 인식하지 못했습니다: " .. tostring(err)) end
     if packs_import and packs_import.from_import_result then
@@ -143,7 +143,7 @@ function M.import(driver, child, raw_text)
     else
       incoming = { commands = {} }
       for i, s in ipairs(result.signals or {}) do
-        local code = zosung.encode(s.sig)
+        local code = native.encode(s.sig)
         if code then incoming.commands[s.name or ("key_" .. i)] = { z = code, carrier = s.sig.carrier_hz } end
       end
     end

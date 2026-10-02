@@ -2,7 +2,7 @@
 local log = require "log"
 local caps = require "caps"
 local util = require "util"
-local zosung_codec = require "ir.codec_zosung"
+local native = require "ir.native"
 local signal = require "ir.signal"
 local zosung = require "transport.zosung"
 local tx_queue = require "transport.tx_queue"
@@ -35,13 +35,16 @@ function M.resolve_code(text)
     if not rec then return nil, "unknown builtin key " .. text end
     return rec.z, rec.carrier
   end
-  if zosung_codec.looks_like(text) then return text, signal.DEFAULT_CARRIER end
+  -- Native/Broadlink/Tuya codes are normalized into the device's own packet
+  -- layout (lossless for device-learned codes: ticks round-trip exactly).
+  local nsig = native.decode(text)
+  if nsig then return native.encode(nsig), signal.carrier(nsig) end
   local ok, detect = pcall(require, "import.detect")
   if not ok then return nil, "importers unavailable" end
   local result, err = detect.parse_any(text)
   if not result or not result.signals or not result.signals[1] then return nil, err or "no signal" end
   local sig = result.signals[1].sig
-  local code, eerr = zosung_codec.encode(sig)
+  local code, eerr = native.encode(sig)
   if not code then return nil, eerr end
   return code, signal.carrier(sig)
 end
@@ -94,7 +97,7 @@ end
 -- learned code not owned by any child session
 function M.on_raw_learned(device, code, raw_len)
   device:set_field(F_LAST_RAW, code, { persist = true })
-  local sig = zosung_codec.decode(code)
+  local sig = native.decode(code)
   local desc = sig and signal.describe(sig) or "undecodable"
   log.info("[ZGIR] bridge raw learn " .. desc)
   M.status(device, string.format("학습 완료 %d bytes, %s — 코드: %s", raw_len or 0, desc,

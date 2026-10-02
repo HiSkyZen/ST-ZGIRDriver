@@ -1,5 +1,5 @@
 local util = require "util"
-local codec = require "ir.codec_zosung"
+local codec = require "ir.native"
 
 local M = { SCHEMA_VERSION = 1, DRIVER_VERSION = "1.0.0" }
 local TYPES = { tv = true, ac = true, fan = true, media = true, generic = true }

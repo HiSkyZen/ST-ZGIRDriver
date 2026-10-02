@@ -8,7 +8,7 @@
 local log = require "log"
 local caps = require "caps"
 local store = require "ir.store"
-local zosung_codec = require "ir.codec_zosung"
+local native = require "ir.native"
 local zosung = require "transport.zosung"
 local dispatcher = require "children.dispatcher"
 local common = require "devices.common"
@@ -328,7 +328,7 @@ function M.on_learned(driver, parent, code)
     log.info("[ZGIR] learned code arrived without waiting session; ignored for child")
     return true
   end
-  local sig, err = zosung_codec.decode(code)
+  local sig, err = native.decode(code)
   if not sig then
     log.warn("[ZGIR] learned code undecodable: " .. tostring(err))
     return prompt(child, "수신한 신호를 해석할 수 없습니다. '재시도'를 눌러 주세요.", "error") or true

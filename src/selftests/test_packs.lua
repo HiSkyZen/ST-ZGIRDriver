@@ -4,7 +4,7 @@ local export = require "packs.export"
 local importer = require "packs.import"
 local migration = require "packs.migration"
 local catalog = require "packs.catalog"
-local codec = require "ir.codec_zosung"
+local codec = require "ir.native"
 local M = { name = "packs", cases = {} }
 
 local function sample_def()

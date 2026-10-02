@@ -46,6 +46,18 @@ return {
       t.eq(#def.ac.constraints.fan_modes, 2, "def fan modes")
       t.ok(def.ac.codebook["cool|low|-|24"], "codebook key")
     end },
+    { "native codec matches device-learned layout", function(t)
+      local native = require "ir.native"
+      -- learned from a physical NEC remote by ZG-IR01 fw 23062026 (2026-10-02)
+      local learned = "JgBhAAABGY0REhESETUREhERERIREhESEDURNRESETQRNBE1ETURNBESERIQEhA1ERIREhESERIRNRE1ETQREhE0EDUQNRE0EQAE4wABGEYRAAvLAAEZRhAAC8sAARlGEQ=="
+      local sig = assert(native.decode(learned))
+      t.near(sig.timings_us[1], 8557, 40, "header mark")
+      t.near(sig.timings_us[2], 4293, 40, "header space")
+      t.eq(native.encode(sig), learned, "lossless re-encode")
+      local nec = require("ir.protocols").nec(0x04, 0x08)
+      local back = assert(native.decode(native.encode(nec)))
+      t.ok(require("ir.signal").timings_close(nec.timings_us, back.timings_us, 0.03), "NEC round trip")
+    end },
     { "key helpers", function(t)
       t.same(common.sorted_keys({ ok = 1, power = 1, zz_custom = 1, vol_up = 1 }), { "power", "vol_up", "ok", "zz_custom" })
       t.eq(common.sanitize_key("Vol Up!"), "vol_up")

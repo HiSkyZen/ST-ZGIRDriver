@@ -66,8 +66,10 @@ function M.validate(sig)
 end
 
 -- Timings for transmission: main frame followed by repeat_count repeat frames.
--- Values above MAX_TIMING are clamped (they are always long gaps in practice).
-function M.flatten(sig)
+-- Values above max_timing (default MAX_TIMING, the Tuya-LZ uint16 limit) are
+-- clamped; they are always long gaps in practice.
+function M.flatten(sig, max_timing)
+  max_timing = max_timing or M.MAX_TIMING
   local out = {}
   local function append(list)
     if #out % 2 == 1 then out[#out + 1] = M.FRAME_GAP_US end
@@ -78,7 +80,7 @@ function M.flatten(sig)
     for _ = 1, (sig.repeat_count or 0) do append(sig.repeat_timings_us) end
   end
   for i = 1, #out do
-    if out[i] > M.MAX_TIMING then out[i] = M.MAX_TIMING end
+    if out[i] > max_timing then out[i] = max_timing end
   end
   return out
 end

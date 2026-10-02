@@ -49,18 +49,20 @@ API: `signal.new(carrier, timings, {repeat_timings_us, repeat_count, source})`,
 `signal.validate(sig) -> true | nil, err`, `signal.flatten(sig) -> timings`,
 `signal.carrier(sig)`, `signal.timings_close(a, b, tol)`, `signal.describe(sig)`.
 
-## Native codec (`ir/codec_zosung.lua`) — FROZEN
+## Native codec (`ir/native.lua`) — VERIFIED ON HARDWARE
 
-`encode(sig) -> b64 | nil, err`, `decode(b64, carrier?) -> sig | nil, err`,
-`looks_like(b64) -> bool`, `compress/decompress(bytes)`.
-Format: base64(Tuya-LZ(uint16le timings)). Learned codes from the device are this format.
+ZG-IR01 learned codes are **Broadlink packets** (base64): `0x26 <repeat> <len16le> <pulses>`, pulses in
+8192/269 µs ticks (`0x00 hi lo` for > 255), `len` = whole buffer incl. header, no `0x0d05`, no padding.
+`native.encode(sig)` emits exactly that layout (device-learned codes re-encode byte-identically);
+`native.decode(b64)` reads it plus standard Broadlink and Tuya-LZ (`ir/codec_zosung.lua`, TS1201 family).
+TX `key_code` = native code. (`ir/codec_zosung.lua` remains as an import format only.)
 
 ## Stored command record
 
 Persisted everywhere (child definitions, packs) as the compact native form:
 
 ```lua
-{ z = "<zosung base64>", carrier = 38000, fp = "<fingerprint>" }  -- fp optional
+{ z = "<native base64>", carrier = 38000, fp = "<fingerprint>" }  -- fp optional
 ```
 
 ## Key vocabulary (lower_snake_case, `[a-z0-9_]+`, ≤ 32 chars)
@@ -105,7 +107,7 @@ Device instance state (`state` field) is NEVER part of a definition or pack.
   "minDriverVersion": "1.0.0",
   "provenance": { "source": "learned|smartir|broadlink|pronto|lirc|globalcache|builtin", "author": "", "created": "" },
   "capabilityMappings": { },
-  "commands": { "power": { "carrier": 38000, "z": "<zosung b64>" } },
+  "commands": { "power": { "carrier": 38000, "z": "<native b64>" } },
   "ac": { "model": {}, "codebook": { "cool|auto|off|24": { "carrier": 38000, "z": "..." } },
           "constraints": { "minTemp": 16, "maxTemp": 30, "step": 1, "modes": [], "fanModes": [], "swingModes": [] } },
   "checksum": "<fnv1a32 of util.json_canonical(pack without checksum)>" }

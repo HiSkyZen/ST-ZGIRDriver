@@ -1,7 +1,7 @@
 local util = require "util"
 local schema = require "packs.schema"
 local migration = require "packs.migration"
-local codec = require "ir.codec_zosung"
+local codec = require "ir.native"
 local signal = require "ir.signal"
 local M = {}
 

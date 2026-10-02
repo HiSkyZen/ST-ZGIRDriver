@@ -1,5 +1,5 @@
 local protocols = require "ir.protocols"
-local codec = require "ir.codec_zosung"
+local codec = require "ir.native"
 local M = {}
 
 local entries = {
