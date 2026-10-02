@@ -1,0 +1,75 @@
+{
+  "dashboard": {
+    "states": [
+      {
+        "label": "{{learnStatus.value}}"
+      }
+    ],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Learning",
+      "displayType": "state",
+      "state": {
+        "label": "{{prompt.value}}"
+      }
+    },
+    {
+      "label": "Status",
+      "displayType": "state",
+      "state": {
+        "label": "{{learnStatus.value}} {{currentKey.value}}"
+      }
+    },
+    {
+      "label": "Start guided learning",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "startGuided"
+      }
+    },
+    {
+      "label": "Learn one key",
+      "displayType": "textField",
+      "textField": {
+        "value": "currentKey.value",
+        "valueType": "string",
+        "command": "learn",
+        "argumentType": "string"
+      }
+    },
+    {
+      "label": "Worked - next",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "confirm"
+      }
+    },
+    {
+      "label": "Retry",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "retry"
+      }
+    },
+    {
+      "label": "Skip",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "skip"
+      }
+    },
+    {
+      "label": "Cancel",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "cancel"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": []
+  }
+}

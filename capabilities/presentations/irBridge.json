@@ -1,0 +1,66 @@
+{
+  "dashboard": {
+    "states": [
+      {
+        "label": "{{bridgeStatus.value}}"
+      }
+    ],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Bridge",
+      "displayType": "state",
+      "state": {
+        "label": "{{bridgeStatus.value}}"
+      }
+    },
+    {
+      "label": "Remotes",
+      "displayType": "state",
+      "state": {
+        "label": "{{remotes.value}}"
+      }
+    },
+    {
+      "label": "Add remote (tv/ac/fan/media/generic[:name] or builtin:id)",
+      "displayType": "textField",
+      "textField": {
+        "value": "bridgeStatus.value",
+        "valueType": "string",
+        "command": "createRemote",
+        "argumentType": "string"
+      }
+    },
+    {
+      "label": "Learn raw code",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "learnRaw"
+      }
+    },
+    {
+      "label": "Send IR code",
+      "displayType": "textField",
+      "textField": {
+        "value": "bridgeStatus.value",
+        "valueType": "string",
+        "command": "sendCode",
+        "argumentType": "string"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": [
+      {
+        "label": "Send IR code",
+        "displayType": "textField",
+        "textField": {
+          "command": "sendCode",
+          "argumentType": "string"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,893 @@
+{
+  "dashboard": {
+    "states": [
+      {
+        "label": "{{lastKey.value}}"
+      }
+    ],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Remote keys",
+      "displayType": "list",
+      "list": {
+        "command": {
+          "name": "press",
+          "argumentType": "string",
+          "supportedValues": "supportedKeys.value",
+          "alternatives": [
+            {
+              "key": "power",
+              "value": "Power",
+              "type": "active"
+            },
+            {
+              "key": "power_on",
+              "value": "Power on",
+              "type": "active"
+            },
+            {
+              "key": "power_off",
+              "value": "Power off",
+              "type": "active"
+            },
+            {
+              "key": "vol_up",
+              "value": "Volume +",
+              "type": "active"
+            },
+            {
+              "key": "vol_down",
+              "value": "Volume -",
+              "type": "active"
+            },
+            {
+              "key": "mute",
+              "value": "Mute",
+              "type": "active"
+            },
+            {
+              "key": "ch_up",
+              "value": "Channel +",
+              "type": "active"
+            },
+            {
+              "key": "ch_down",
+              "value": "Channel -",
+              "type": "active"
+            },
+            {
+              "key": "input",
+              "value": "Input",
+              "type": "active"
+            },
+            {
+              "key": "up",
+              "value": "Up",
+              "type": "active"
+            },
+            {
+              "key": "down",
+              "value": "Down",
+              "type": "active"
+            },
+            {
+              "key": "left",
+              "value": "Left",
+              "type": "active"
+            },
+            {
+              "key": "right",
+              "value": "Right",
+              "type": "active"
+            },
+            {
+              "key": "ok",
+              "value": "OK",
+              "type": "active"
+            },
+            {
+              "key": "back",
+              "value": "Back",
+              "type": "active"
+            },
+            {
+              "key": "home",
+              "value": "Home",
+              "type": "active"
+            },
+            {
+              "key": "menu",
+              "value": "Menu",
+              "type": "active"
+            },
+            {
+              "key": "exit",
+              "value": "Exit",
+              "type": "active"
+            },
+            {
+              "key": "info",
+              "value": "Info",
+              "type": "active"
+            },
+            {
+              "key": "guide",
+              "value": "Guide",
+              "type": "active"
+            },
+            {
+              "key": "red",
+              "value": "Red",
+              "type": "active"
+            },
+            {
+              "key": "green",
+              "value": "Green",
+              "type": "active"
+            },
+            {
+              "key": "yellow",
+              "value": "Yellow",
+              "type": "active"
+            },
+            {
+              "key": "blue",
+              "value": "Blue",
+              "type": "active"
+            },
+            {
+              "key": "play",
+              "value": "Play",
+              "type": "active"
+            },
+            {
+              "key": "pause",
+              "value": "Pause",
+              "type": "active"
+            },
+            {
+              "key": "play_pause",
+              "value": "Play/Pause",
+              "type": "active"
+            },
+            {
+              "key": "stop",
+              "value": "Stop",
+              "type": "active"
+            },
+            {
+              "key": "rewind",
+              "value": "Rewind",
+              "type": "active"
+            },
+            {
+              "key": "fast_forward",
+              "value": "Fast forward",
+              "type": "active"
+            },
+            {
+              "key": "next",
+              "value": "Next",
+              "type": "active"
+            },
+            {
+              "key": "previous",
+              "value": "Previous",
+              "type": "active"
+            },
+            {
+              "key": "record",
+              "value": "Record",
+              "type": "active"
+            },
+            {
+              "key": "digit_0",
+              "value": "0",
+              "type": "active"
+            },
+            {
+              "key": "digit_1",
+              "value": "1",
+              "type": "active"
+            },
+            {
+              "key": "digit_2",
+              "value": "2",
+              "type": "active"
+            },
+            {
+              "key": "digit_3",
+              "value": "3",
+              "type": "active"
+            },
+            {
+              "key": "digit_4",
+              "value": "4",
+              "type": "active"
+            },
+            {
+              "key": "digit_5",
+              "value": "5",
+              "type": "active"
+            },
+            {
+              "key": "digit_6",
+              "value": "6",
+              "type": "active"
+            },
+            {
+              "key": "digit_7",
+              "value": "7",
+              "type": "active"
+            },
+            {
+              "key": "digit_8",
+              "value": "8",
+              "type": "active"
+            },
+            {
+              "key": "digit_9",
+              "value": "9",
+              "type": "active"
+            },
+            {
+              "key": "speed_up",
+              "value": "Speed +",
+              "type": "active"
+            },
+            {
+              "key": "speed_down",
+              "value": "Speed -",
+              "type": "active"
+            },
+            {
+              "key": "speed_1",
+              "value": "Speed 1",
+              "type": "active"
+            },
+            {
+              "key": "speed_2",
+              "value": "Speed 2",
+              "type": "active"
+            },
+            {
+              "key": "speed_3",
+              "value": "Speed 3",
+              "type": "active"
+            },
+            {
+              "key": "speed_4",
+              "value": "Speed 4",
+              "type": "active"
+            },
+            {
+              "key": "speed_5",
+              "value": "Speed 5",
+              "type": "active"
+            },
+            {
+              "key": "speed_6",
+              "value": "Speed 6",
+              "type": "active"
+            },
+            {
+              "key": "speed_7",
+              "value": "Speed 7",
+              "type": "active"
+            },
+            {
+              "key": "speed_8",
+              "value": "Speed 8",
+              "type": "active"
+            },
+            {
+              "key": "speed_9",
+              "value": "Speed 9",
+              "type": "active"
+            },
+            {
+              "key": "oscillate",
+              "value": "Oscillate",
+              "type": "active"
+            },
+            {
+              "key": "timer",
+              "value": "Timer",
+              "type": "active"
+            },
+            {
+              "key": "mode_natural",
+              "value": "Natural wind",
+              "type": "active"
+            },
+            {
+              "key": "mode_sleep",
+              "value": "Sleep wind",
+              "type": "active"
+            },
+            {
+              "key": "turbo",
+              "value": "Turbo",
+              "type": "active"
+            },
+            {
+              "key": "eco",
+              "value": "Eco",
+              "type": "active"
+            },
+            {
+              "key": "sleep",
+              "value": "Sleep",
+              "type": "active"
+            },
+            {
+              "key": "display",
+              "value": "Display",
+              "type": "active"
+            },
+            {
+              "key": "light",
+              "value": "Light",
+              "type": "active"
+            },
+            {
+              "key": "key_1",
+              "value": "Key 1",
+              "type": "active"
+            },
+            {
+              "key": "key_2",
+              "value": "Key 2",
+              "type": "active"
+            },
+            {
+              "key": "key_3",
+              "value": "Key 3",
+              "type": "active"
+            },
+            {
+              "key": "key_4",
+              "value": "Key 4",
+              "type": "active"
+            },
+            {
+              "key": "key_5",
+              "value": "Key 5",
+              "type": "active"
+            },
+            {
+              "key": "key_6",
+              "value": "Key 6",
+              "type": "active"
+            },
+            {
+              "key": "key_7",
+              "value": "Key 7",
+              "type": "active"
+            },
+            {
+              "key": "key_8",
+              "value": "Key 8",
+              "type": "active"
+            },
+            {
+              "key": "key_9",
+              "value": "Key 9",
+              "type": "active"
+            },
+            {
+              "key": "key_10",
+              "value": "Key 10",
+              "type": "active"
+            },
+            {
+              "key": "key_11",
+              "value": "Key 11",
+              "type": "active"
+            },
+            {
+              "key": "key_12",
+              "value": "Key 12",
+              "type": "active"
+            },
+            {
+              "key": "key_13",
+              "value": "Key 13",
+              "type": "active"
+            },
+            {
+              "key": "key_14",
+              "value": "Key 14",
+              "type": "active"
+            },
+            {
+              "key": "key_15",
+              "value": "Key 15",
+              "type": "active"
+            },
+            {
+              "key": "key_16",
+              "value": "Key 16",
+              "type": "active"
+            },
+            {
+              "key": "key_17",
+              "value": "Key 17",
+              "type": "active"
+            },
+            {
+              "key": "key_18",
+              "value": "Key 18",
+              "type": "active"
+            },
+            {
+              "key": "key_19",
+              "value": "Key 19",
+              "type": "active"
+            },
+            {
+              "key": "key_20",
+              "value": "Key 20",
+              "type": "active"
+            }
+          ]
+        },
+        "state": {
+          "value": "lastKey.value",
+          "valueType": "string",
+          "alternatives": [
+            {
+              "key": "power",
+              "value": "Power",
+              "type": "active"
+            },
+            {
+              "key": "power_on",
+              "value": "Power on",
+              "type": "active"
+            },
+            {
+              "key": "power_off",
+              "value": "Power off",
+              "type": "active"
+            },
+            {
+              "key": "vol_up",
+              "value": "Volume +",
+              "type": "active"
+            },
+            {
+              "key": "vol_down",
+              "value": "Volume -",
+              "type": "active"
+            },
+            {
+              "key": "mute",
+              "value": "Mute",
+              "type": "active"
+            },
+            {
+              "key": "ch_up",
+              "value": "Channel +",
+              "type": "active"
+            },
+            {
+              "key": "ch_down",
+              "value": "Channel -",
+              "type": "active"
+            },
+            {
+              "key": "input",
+              "value": "Input",
+              "type": "active"
+            },
+            {
+              "key": "up",
+              "value": "Up",
+              "type": "active"
+            },
+            {
+              "key": "down",
+              "value": "Down",
+              "type": "active"
+            },
+            {
+              "key": "left",
+              "value": "Left",
+              "type": "active"
+            },
+            {
+              "key": "right",
+              "value": "Right",
+              "type": "active"
+            },
+            {
+              "key": "ok",
+              "value": "OK",
+              "type": "active"
+            },
+            {
+              "key": "back",
+              "value": "Back",
+              "type": "active"
+            },
+            {
+              "key": "home",
+              "value": "Home",
+              "type": "active"
+            },
+            {
+              "key": "menu",
+              "value": "Menu",
+              "type": "active"
+            },
+            {
+              "key": "exit",
+              "value": "Exit",
+              "type": "active"
+            },
+            {
+              "key": "info",
+              "value": "Info",
+              "type": "active"
+            },
+            {
+              "key": "guide",
+              "value": "Guide",
+              "type": "active"
+            },
+            {
+              "key": "red",
+              "value": "Red",
+              "type": "active"
+            },
+            {
+              "key": "green",
+              "value": "Green",
+              "type": "active"
+            },
+            {
+              "key": "yellow",
+              "value": "Yellow",
+              "type": "active"
+            },
+            {
+              "key": "blue",
+              "value": "Blue",
+              "type": "active"
+            },
+            {
+              "key": "play",
+              "value": "Play",
+              "type": "active"
+            },
+            {
+              "key": "pause",
+              "value": "Pause",
+              "type": "active"
+            },
+            {
+              "key": "play_pause",
+              "value": "Play/Pause",
+              "type": "active"
+            },
+            {
+              "key": "stop",
+              "value": "Stop",
+              "type": "active"
+            },
+            {
+              "key": "rewind",
+              "value": "Rewind",
+              "type": "active"
+            },
+            {
+              "key": "fast_forward",
+              "value": "Fast forward",
+              "type": "active"
+            },
+            {
+              "key": "next",
+              "value": "Next",
+              "type": "active"
+            },
+            {
+              "key": "previous",
+              "value": "Previous",
+              "type": "active"
+            },
+            {
+              "key": "record",
+              "value": "Record",
+              "type": "active"
+            },
+            {
+              "key": "digit_0",
+              "value": "0",
+              "type": "active"
+            },
+            {
+              "key": "digit_1",
+              "value": "1",
+              "type": "active"
+            },
+            {
+              "key": "digit_2",
+              "value": "2",
+              "type": "active"
+            },
+            {
+              "key": "digit_3",
+              "value": "3",
+              "type": "active"
+            },
+            {
+              "key": "digit_4",
+              "value": "4",
+              "type": "active"
+            },
+            {
+              "key": "digit_5",
+              "value": "5",
+              "type": "active"
+            },
+            {
+              "key": "digit_6",
+              "value": "6",
+              "type": "active"
+            },
+            {
+              "key": "digit_7",
+              "value": "7",
+              "type": "active"
+            },
+            {
+              "key": "digit_8",
+              "value": "8",
+              "type": "active"
+            },
+            {
+              "key": "digit_9",
+              "value": "9",
+              "type": "active"
+            },
+            {
+              "key": "speed_up",
+              "value": "Speed +",
+              "type": "active"
+            },
+            {
+              "key": "speed_down",
+              "value": "Speed -",
+              "type": "active"
+            },
+            {
+              "key": "speed_1",
+              "value": "Speed 1",
+              "type": "active"
+            },
+            {
+              "key": "speed_2",
+              "value": "Speed 2",
+              "type": "active"
+            },
+            {
+              "key": "speed_3",
+              "value": "Speed 3",
+              "type": "active"
+            },
+            {
+              "key": "speed_4",
+              "value": "Speed 4",
+              "type": "active"
+            },
+            {
+              "key": "speed_5",
+              "value": "Speed 5",
+              "type": "active"
+            },
+            {
+              "key": "speed_6",
+              "value": "Speed 6",
+              "type": "active"
+            },
+            {
+              "key": "speed_7",
+              "value": "Speed 7",
+              "type": "active"
+            },
+            {
+              "key": "speed_8",
+              "value": "Speed 8",
+              "type": "active"
+            },
+            {
+              "key": "speed_9",
+              "value": "Speed 9",
+              "type": "active"
+            },
+            {
+              "key": "oscillate",
+              "value": "Oscillate",
+              "type": "active"
+            },
+            {
+              "key": "timer",
+              "value": "Timer",
+              "type": "active"
+            },
+            {
+              "key": "mode_natural",
+              "value": "Natural wind",
+              "type": "active"
+            },
+            {
+              "key": "mode_sleep",
+              "value": "Sleep wind",
+              "type": "active"
+            },
+            {
+              "key": "turbo",
+              "value": "Turbo",
+              "type": "active"
+            },
+            {
+              "key": "eco",
+              "value": "Eco",
+              "type": "active"
+            },
+            {
+              "key": "sleep",
+              "value": "Sleep",
+              "type": "active"
+            },
+            {
+              "key": "display",
+              "value": "Display",
+              "type": "active"
+            },
+            {
+              "key": "light",
+              "value": "Light",
+              "type": "active"
+            },
+            {
+              "key": "key_1",
+              "value": "Key 1",
+              "type": "active"
+            },
+            {
+              "key": "key_2",
+              "value": "Key 2",
+              "type": "active"
+            },
+            {
+              "key": "key_3",
+              "value": "Key 3",
+              "type": "active"
+            },
+            {
+              "key": "key_4",
+              "value": "Key 4",
+              "type": "active"
+            },
+            {
+              "key": "key_5",
+              "value": "Key 5",
+              "type": "active"
+            },
+            {
+              "key": "key_6",
+              "value": "Key 6",
+              "type": "active"
+            },
+            {
+              "key": "key_7",
+              "value": "Key 7",
+              "type": "active"
+            },
+            {
+              "key": "key_8",
+              "value": "Key 8",
+              "type": "active"
+            },
+            {
+              "key": "key_9",
+              "value": "Key 9",
+              "type": "active"
+            },
+            {
+              "key": "key_10",
+              "value": "Key 10",
+              "type": "active"
+            },
+            {
+              "key": "key_11",
+              "value": "Key 11",
+              "type": "active"
+            },
+            {
+              "key": "key_12",
+              "value": "Key 12",
+              "type": "active"
+            },
+            {
+              "key": "key_13",
+              "value": "Key 13",
+              "type": "active"
+            },
+            {
+              "key": "key_14",
+              "value": "Key 14",
+              "type": "active"
+            },
+            {
+              "key": "key_15",
+              "value": "Key 15",
+              "type": "active"
+            },
+            {
+              "key": "key_16",
+              "value": "Key 16",
+              "type": "active"
+            },
+            {
+              "key": "key_17",
+              "value": "Key 17",
+              "type": "active"
+            },
+            {
+              "key": "key_18",
+              "value": "Key 18",
+              "type": "active"
+            },
+            {
+              "key": "key_19",
+              "value": "Key 19",
+              "type": "active"
+            },
+            {
+              "key": "key_20",
+              "value": "Key 20",
+              "type": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "Send key by name",
+      "displayType": "textField",
+      "textField": {
+        "value": "lastKey.value",
+        "valueType": "string",
+        "command": "press",
+        "argumentType": "string"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [
+      {
+        "label": "Last key",
+        "displayType": "textField",
+        "textField": {
+          "value": "lastKey.value",
+          "valueType": "string"
+        }
+      }
+    ],
+    "actions": [
+      {
+        "label": "Press key",
+        "displayType": "textField",
+        "textField": {
+          "command": "press",
+          "argumentType": "string"
+        }
+      }
+    ]
+  }
+}

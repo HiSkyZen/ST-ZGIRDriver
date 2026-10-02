@@ -1,0 +1,43 @@
+{
+  "dashboard": {
+    "states": [],
+    "actions": []
+  },
+  "detailView": [
+    {
+      "label": "Remote pack",
+      "displayType": "state",
+      "state": {
+        "label": "{{packInfo.value}}"
+      }
+    },
+    {
+      "label": "Import codes / pack",
+      "displayType": "textField",
+      "textField": {
+        "value": "importStatus.value",
+        "valueType": "string",
+        "command": "importData",
+        "argumentType": "string"
+      }
+    },
+    {
+      "label": "Export pack",
+      "displayType": "pushButton",
+      "pushButton": {
+        "command": "exportPack"
+      }
+    },
+    {
+      "label": "Exported pack",
+      "displayType": "state",
+      "state": {
+        "label": "{{exportData.value}}"
+      }
+    }
+  ],
+  "automation": {
+    "conditions": [],
+    "actions": []
+  }
+}
