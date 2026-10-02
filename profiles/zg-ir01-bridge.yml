@@ -1,0 +1,85 @@
+name: zg-ir01-bridge
+components:
+  - id: main
+    label: ZG-IR01
+    capabilities:
+      - id: drumpepper55014.irBridge
+        version: 1
+      - id: temperatureMeasurement
+        version: 1
+      - id: relativeHumidityMeasurement
+        version: 1
+      - id: battery
+        version: 1
+      - id: voltageMeasurement
+        version: 1
+      - id: refresh
+        version: 1
+    categories:
+      - name: IrRemote
+preferences:
+  - name: periodicReporting
+    title: "Periodic sensor reporting"
+    description: "Ask ZG-IR01 to report temperature/humidity periodically. More frequent reporting increases battery drain. When off, change-triggered and spontaneous reports still arrive."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
+  - name: reportingInterval
+    title: "Sensor reporting interval"
+    description: "Maximum interval between temperature/humidity reports. 1-5 min noticeably shortens battery life."
+    required: false
+    preferenceType: enumeration
+    definition:
+      options:
+        "60": "1 min"
+        "300": "5 min"
+        "600": "10 min"
+        "900": "15 min"
+        "1800": "30 min"
+        "3600": "1 h"
+        "10800": "3 h"
+        "21600": "6 h"
+      default: "600"
+  - name: tempChange
+    title: "Temperature reportable change (C)"
+    description: "Report when temperature changes by at least this much. Smaller values increase battery drain."
+    required: false
+    preferenceType: number
+    definition:
+      minimum: 0.1
+      maximum: 5
+      default: 0.3
+  - name: humidityChange
+    title: "Humidity reportable change (%)"
+    description: "Report when humidity changes by at least this much. Smaller values increase battery drain."
+    required: false
+    preferenceType: number
+    definition:
+      minimum: 1
+      maximum: 20
+      default: 2
+  - name: batteryReporting
+    title: "Periodic battery reporting"
+    description: "Periodically report battery percentage and voltage."
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
+  - name: batteryInterval
+    title: "Battery reporting interval"
+    description: "Maximum interval between battery reports. Short intervals increase battery drain."
+    required: false
+    preferenceType: enumeration
+    definition:
+      options:
+        "3600": "1 h"
+        "10800": "3 h"
+        "21600": "6 h"
+        "43200": "12 h"
+        "86400": "24 h"
+      default: "21600"
+metadata:
+  deviceType: RemoteController
+  ocfDeviceType: x.com.st.d.remotecontroller
+  deviceTypeId: RemoteController

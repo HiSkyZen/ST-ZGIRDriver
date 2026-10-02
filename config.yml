@@ -1,8 +1,5 @@
-name: "HOBEIAN ZG-IR01 Probe"
-packageKey: "hobeian-zg-ir01-probe"
-defaultProfile: "zg-ir01-probe"
-
+name: "ZG-IR01 Universal IR"
+packageKey: "zg-ir01-universal-ir"
 permissions:
   zigbee: {}
-
-description: "Firmware and Zigbee probe for HOBEIAN ZG-IR01"
+description: "Local universal IR platform for HOBEIAN ZG-IR01: learn/replay arbitrary IR, TV/AC/fan/media/generic child devices, importers and Remote Packs."

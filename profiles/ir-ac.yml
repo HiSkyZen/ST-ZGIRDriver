@@ -1,0 +1,58 @@
+name: ir-ac
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+      - id: airConditionerMode
+        version: 1
+      - id: thermostatCoolingSetpoint
+        version: 1
+      - id: thermostatHeatingSetpoint
+        version: 1
+      - id: airConditionerFanMode
+        version: 1
+      - id: fanOscillationMode
+        version: 1
+      - id: drumpepper55014.irRemote
+        version: 1
+      - id: drumpepper55014.irLearning
+        version: 1
+      - id: drumpepper55014.irRemotePack
+        version: 1
+      - id: refresh
+        version: 1
+    categories:
+      - name: AirConditioner
+  - id: turbo
+    label: Turbo
+    capabilities:
+      - id: switch
+        version: 1
+    categories:
+      - name: Switch
+  - id: eco
+    label: Eco
+    capabilities:
+      - id: switch
+        version: 1
+    categories:
+      - name: Switch
+  - id: sleep
+    label: Sleep
+    capabilities:
+      - id: switch
+        version: 1
+    categories:
+      - name: Switch
+  - id: display
+    label: Display
+    capabilities:
+      - id: switch
+        version: 1
+    categories:
+      - name: Switch
+metadata:
+  deviceType: AirConditioner
+  ocfDeviceType: oic.d.airconditioner
+  deviceTypeId: AirConditioner

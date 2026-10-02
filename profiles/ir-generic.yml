@@ -1,22 +1,19 @@
-name: zg-ir01-probe
-
+name: ir-generic
 components:
   - id: main
-    label: ZG-IR01
     capabilities:
       - id: switch
         version: 1
+      - id: drumpepper55014.irRemote
+        version: 1
+      - id: drumpepper55014.irLearning
+        version: 1
+      - id: drumpepper55014.irRemotePack
+        version: 1
       - id: refresh
         version: 1
-      - id: temperatureMeasurement
-        version: 1
-      - id: relativeHumidityMeasurement
-        version: 1
-      - id: battery
-        version: 1
     categories:
-      - name: IrRemote
-
+      - name: RemoteController
 metadata:
   deviceType: RemoteController
   ocfDeviceType: x.com.st.d.remotecontroller

@@ -1,0 +1,30 @@
+name: ir-media
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+      - id: audioVolume
+        version: 1
+      - id: audioMute
+        version: 1
+      - id: mediaPlayback
+        version: 1
+      - id: mediaTrackControl
+        version: 1
+      - id: mediaInputSource
+        version: 1
+      - id: drumpepper55014.irRemote
+        version: 1
+      - id: drumpepper55014.irLearning
+        version: 1
+      - id: drumpepper55014.irRemotePack
+        version: 1
+      - id: refresh
+        version: 1
+    categories:
+      - name: Receiver
+metadata:
+  deviceType: Receiver
+  ocfDeviceType: oic.d.receiver
+  deviceTypeId: Receiver
