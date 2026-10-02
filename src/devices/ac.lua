@@ -37,15 +37,32 @@ local MODE_FROM_ST = { cool = "cool", heat = "heat", dry = "dry", fanOnly = "fan
 local SWING_TO_ST = { off = "off", on = "all", both = "all", vertical = "vertical", horizontal = "horizontal" }
 local SWING_FROM_ST = { off = "off", fixed = "off", all = "on", vertical = "vertical", horizontal = "horizontal" }
 
+-- Explicit constraints (learned or imported) win; an explicitly empty
+-- fan/swing list means the remote has no such dimension (state key "-").
 function M.constraints(def)
-  local c = def.ac and def.ac.constraints or {}
+  local explicit = def.ac and def.ac.constraints
+  local c = explicit or {}
   local d = M.DEFAULT_CONSTRAINTS
+  local function list(v, default)
+    if type(v) == "table" and (#v > 0 or explicit) then return v end
+    return default
+  end
   return {
     min_temp = c.min_temp or d.min_temp, max_temp = c.max_temp or d.max_temp, step = c.step or d.step,
     modes = (c.modes and #c.modes > 0) and c.modes or d.modes,
-    fan_modes = (c.fan_modes and #c.fan_modes > 0) and c.fan_modes or d.fan_modes,
-    swing_modes = (c.swing_modes and #c.swing_modes > 0) and c.swing_modes or d.swing_modes,
+    fan_modes = list(c.fan_modes, d.fan_modes),
+    swing_modes = list(c.swing_modes, d.swing_modes),
   }
+end
+
+-- State used for code lookup: dimensions the remote lacks become "-".
+function M.normalize(def, s)
+  local c = M.constraints(def)
+  local n = {}
+  for k, v in pairs(s) do n[k] = v end
+  if #c.fan_modes == 0 then n.fan = "-" end
+  if #c.swing_modes == 0 then n.swing = "-" end
+  return n
 end
 
 function M.state_key(s)
@@ -57,6 +74,7 @@ end
 -- Resolve a state to a native code.  Returns code, method | nil, err
 function M.resolve(def, s)
   local ac = def.ac or {}
+  s = M.normalize(def, s)
   if ac_learner and ac_learner.resolve then
     local ok, sig, method = pcall(ac_learner.resolve, ac, s)
     if ok and sig then
@@ -70,8 +88,9 @@ function M.resolve(def, s)
   -- direct raw codebook fallback (also used while the analyzer is unavailable)
   local rec = ac.codebook and ac.codebook[M.state_key(s)]
   if rec then return rec.z, "raw", rec.carrier end
-  if s.power == "off" and def.commands and def.commands.power_off then
-    return def.commands.power_off.z, "key", def.commands.power_off.carrier
+  if s.power == "off" then
+    local off = (ac.codebook and ac.codebook.off) or (def.commands and (def.commands.off or def.commands.power_off))
+    if off then return off.z, "key", off.carrier end
   end
   return nil, "no code for state " .. M.state_key(s)
 end
@@ -169,7 +188,7 @@ M.handlers[fom.ID] = {
     local c = M.constraints(ctx.def)
     local supported = false
     for _, v in ipairs(c.swing_modes) do if v == sw then supported = true end end
-    if not supported then sw = (sw == "off") and "off" or c.swing_modes[#c.swing_modes] end
+    if not supported then sw = (sw == "off") and "off" or (c.swing_modes[#c.swing_modes] or "off") end
     M.apply(ctx, { swing = sw })
   end,
 }
@@ -194,6 +213,7 @@ function M.emit_all(ctx)
     local stv = SWING_TO_ST[v]
     if stv and not seen[stv] then swings[#swings + 1] = stv; seen[stv] = true end
   end
+  if #swings == 0 then swings = { "off" } end
   ctx.emit(fom.supportedFanOscillationModes({ value = swings }))
   ctx.emit(fom.fanOscillationMode({ value = SWING_TO_ST[s.swing] or "off" }))
   for _, t in ipairs(M.TOGGLES) do

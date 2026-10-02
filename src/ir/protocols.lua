@@ -61,7 +61,8 @@ end
 function M.samsung32(addr, cmd)
   if type(addr) ~= "number" or addr < 0 or addr > 255 or addr % 1 ~= 0 or
     type(cmd) ~= "number" or cmd < 0 or cmd > 255 or cmd % 1 ~= 0 then return nil, "invalid Samsung address or command" end
-  local bytes = { addr, (~addr) & 0xFF, cmd, (~cmd) & 0xFF }
+  -- Samsung32 repeats the address byte (E0E0xxxx), unlike NEC's inverted address.
+  local bytes = { addr, addr, cmd, (~cmd) & 0xFF }
   local bits = {}
   for _, byte in ipairs(bytes) do for _, bit in ipairs(bits_lsb(byte, 8)) do bits[#bits + 1] = bit end end
   local t = { 4500, 4500 }
@@ -105,9 +106,13 @@ function M.rc5(addr, cmd, toggle)
     type(cmd) ~= "number" or cmd < 0 or cmd > 127 or cmd % 1 ~= 0 then return nil, "invalid RC5 address or command" end
   local halves = {}
   for _, bit in ipairs(rc5_bits(addr, cmd, toggle)) do
-    if bit == 1 then halves[#halves + 1] = 1; halves[#halves + 1] = 0
-    else halves[#halves + 1] = 0; halves[#halves + 1] = 1 end
+    -- RC5 Manchester: 1 = space->mark, 0 = mark->space
+    if bit == 1 then halves[#halves + 1] = 0; halves[#halves + 1] = 1
+    else halves[#halves + 1] = 1; halves[#halves + 1] = 0 end
   end
+  -- the leading start-bit half is idle (space); trailing idle is not encoded
+  while halves[1] == 0 do table.remove(halves, 1) end
+  while halves[#halves] == 0 do halves[#halves] = nil end
   local timings, level, count = {}, halves[1], 0
   for _, half in ipairs(halves) do
     if half == level then count = count + 1

@@ -71,6 +71,8 @@ function M.parse_any(text)
   local named = {}
   for line in (text .. "\n"):gmatch("([^\r\n]*)\r?\n") do
     local name, code = line:match("^%s*([%w_%-]+)%s*[:=]%s*(.-)%s*$")
+    local lname = name and name:lower()
+    if lname == "freq" or lname == "frequency" or lname == "carrier" then name = nil end
     if name and code and code ~= "" then named[#named + 1] = { name = name, code = code } end
   end
   if #named > 0 then
